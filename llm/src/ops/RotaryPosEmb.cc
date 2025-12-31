@@ -1,4 +1,5 @@
 #include <cmath>
+#include <stdexcept>
 
 #include "operators.h"
 
@@ -13,7 +14,11 @@ void RotaryPosEmb::forward(Matrix3D<float> &query, Matrix3D<float> &key, int sta
 
     assert(query.m_dim_z == cos.m_dim_z);
     assert(key.m_dim_z == cos.m_dim_z);
-    assert(max_sqlen > len + start_idx);
+
+    // Check if sequence length exceeds maximum - throw exception instead of aborting
+    if (max_sqlen <= len + start_idx) {
+        throw std::runtime_error("Sequence length exceeded maximum context length. Use /new to start a fresh conversation.");
+    }
 
     // cos, sin = self.rotary_emb(key_states, seq_len=kv_seq_len)
     // query_states, key_states = apply_rotary_pos_emb(query_states, key_states,

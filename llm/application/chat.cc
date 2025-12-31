@@ -2,6 +2,7 @@
 #include <map>
 #include <string>
 #include <cstring>
+#include <sstream>
 
 #include "Generate.h"
 #include "interface.h"
@@ -117,6 +118,89 @@ bool convertToBool(const char* str) {
     else {
         std::cerr << "Error: Invalid boolean value: " << str << std::endl;
         exit(EXIT_FAILURE);
+    }
+}
+
+// Helper function to display generation config
+void show_generation_config(const struct opt_params& config) {
+    set_print_yellow();
+    std::cout << "\n=== Generation Parameters ===\n";
+    std::cout << "n_ctx:             " << config.n_ctx << " (penalty window)\n";
+    std::cout << "temp:              " << config.temp << "\n";
+    std::cout << "top_p:             " << config.top_p << "\n";
+    std::cout << "top_k:             " << config.top_k << "\n";
+    std::cout << "repeat_penalty:    " << config.repeat_penalty << "\n";
+    std::cout << "frequency_penalty: " << config.frequency_penalty << "\n";
+    std::cout << "presence_penalty:  " << config.presence_penalty << "\n";
+    std::cout << "============================\n\n";
+    set_print_reset();
+}
+
+// Helper function to parse and set config value
+bool set_generation_param(struct opt_params& config, const std::string& param, const std::string& value_str) {
+    try {
+        if (param == "n_ctx") {
+            int val = std::stoi(value_str);
+            if (val < 1) {
+                std::cerr << "Error: n_ctx must be >= 1\n";
+                return false;
+            }
+            config.n_ctx = val;
+        } else if (param == "temp") {
+            float val = std::stof(value_str);
+            if (val < 0.0f || val > 2.0f) {
+                std::cerr << "Error: temp must be between 0.0 and 2.0\n";
+                return false;
+            }
+            config.temp = val;
+        } else if (param == "top_p") {
+            float val = std::stof(value_str);
+            if (val < 0.0f || val > 1.0f) {
+                std::cerr << "Error: top_p must be between 0.0 and 1.0\n";
+                return false;
+            }
+            config.top_p = val;
+        } else if (param == "top_k") {
+            int val = std::stoi(value_str);
+            if (val < 0) {
+                std::cerr << "Error: top_k must be >= 0 (0 = disabled)\n";
+                return false;
+            }
+            config.top_k = val;
+        } else if (param == "repeat_penalty") {
+            float val = std::stof(value_str);
+            if (val < 0.0f || val > 2.0f) {
+                std::cerr << "Error: repeat_penalty must be between 0.0 and 2.0\n";
+                return false;
+            }
+            config.repeat_penalty = val;
+        } else if (param == "frequency_penalty") {
+            float val = std::stof(value_str);
+            if (val < -2.0f || val > 2.0f) {
+                std::cerr << "Error: frequency_penalty must be between -2.0 and 2.0\n";
+                return false;
+            }
+            config.frequency_penalty = val;
+        } else if (param == "presence_penalty") {
+            float val = std::stof(value_str);
+            if (val < -2.0f || val > 2.0f) {
+                std::cerr << "Error: presence_penalty must be between -2.0 and 2.0\n";
+                return false;
+            }
+            config.presence_penalty = val;
+        } else {
+            std::cerr << "Error: Unknown parameter '" << param << "'\n";
+            std::cerr << "Available: n_ctx, temp, top_p, top_k, repeat_penalty, frequency_penalty, presence_penalty\n";
+            return false;
+        }
+
+        set_print_yellow();
+        std::cout << "Set " << param << " = " << value_str << "\n\n";
+        set_print_reset();
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "Error: Invalid value '" << value_str << "'\n";
+        return false;
     }
 }
 
@@ -244,16 +328,24 @@ int main(int argc, char* argv[]) {
 
         struct opt_params generation_config;
         generation_config.n_predict = 2048;
+        generation_config.n_ctx = 512;
+        generation_config.repeat_last_n = -1;
         generation_config.repeat_penalty = 1.1f;
         generation_config.temp = 0.7f;
         generation_config.n_vocab = 128256;
         generation_config.top_p = 0.9f;
+        generation_config.top_k = 40;
+        generation_config.frequency_penalty = 0.0f;
+        generation_config.presence_penalty = 0.0f;
 
         bool first_prompt = true;
 
         if (format_id == FP32) {
             Fp32LlamaForCausalLM model = Fp32LlamaForCausalLM(m_path, get_opt_model_config(model_id));
-            std::cout << "Finished!" << std::endl << std::endl;
+            std::cout << "Finished!" << std::endl;
+            set_print_yellow();
+            std::cout << "Available commands: /show (display settings), /set <param> <value> (change setting), /new (reset conversation), quit" << std::endl << std::endl;
+            set_print_reset();
 
             // Get input from the user
             while (true) {
@@ -310,6 +402,27 @@ int main(int argc, char* argv[]) {
                     continue;
                 }
 
+                // Check for /show command
+                if (input == "/show") {
+                    show_generation_config(generation_config);
+                    continue;
+                }
+
+                // Check for /set command
+                if (input.substr(0, 5) == "/set ") {
+                    std::istringstream iss(input.substr(5));
+                    std::string param, value;
+                    if (iss >> param >> value) {
+                        set_generation_param(generation_config, param, value);
+                    } else {
+                        set_print_yellow();
+                        std::cout << "Usage: /set <parameter> <value>\n";
+                        std::cout << "Example: /set temp 0.8\n\n";
+                        set_print_reset();
+                    }
+                    continue;
+                }
+
                 if (instruct) {
                     std::cout << "ASSISTANT: ";
                 }
@@ -327,8 +440,11 @@ int main(int argc, char* argv[]) {
         } else if (format_id == INT4) {
             m_path = "INT4/" + m_path;
             Int4LlamaForCausalLM model = Int4LlamaForCausalLM(m_path, get_opt_model_config(model_id));
-            std::cout << "Finished!" << std::endl << std::endl;
-            
+            std::cout << "Finished!" << std::endl;
+            set_print_yellow();
+            std::cout << "Available commands: /show (display settings), /set <param> <value> (change setting), /new (reset conversation), quit" << std::endl << std::endl;
+            set_print_reset();
+
             // Get input from the user
             while (true) {
                 std::string input;
@@ -381,6 +497,27 @@ int main(int argc, char* argv[]) {
                     set_print_yellow();
                     std::cout << "\n[Conversation reset - starting fresh]\n\n";
                     set_print_reset();
+                    continue;
+                }
+
+                // Check for /show command
+                if (input == "/show") {
+                    show_generation_config(generation_config);
+                    continue;
+                }
+
+                // Check for /set command
+                if (input.substr(0, 5) == "/set ") {
+                    std::istringstream iss(input.substr(5));
+                    std::string param, value;
+                    if (iss >> param >> value) {
+                        set_generation_param(generation_config, param, value);
+                    } else {
+                        set_print_yellow();
+                        std::cout << "Usage: /set <parameter> <value>\n";
+                        std::cout << "Example: /set temp 0.8\n\n";
+                        set_print_reset();
+                    }
                     continue;
                 }
 
@@ -425,8 +562,14 @@ int main(int argc, char* argv[]) {
 
         struct opt_params generation_config;
         generation_config.n_predict = 512;
+        generation_config.n_ctx = 512;
+        generation_config.repeat_last_n = -1;
         generation_config.repeat_penalty = 1.1f;
         generation_config.temp = 0.2f;
+        generation_config.top_k = 40;
+        generation_config.top_p = 0.95f;
+        generation_config.frequency_penalty = 0.0f;
+        generation_config.presence_penalty = 0.0f;
         if(isCodeLLaMA(target_model)) {
             generation_config.n_vocab = 32016;
         }
@@ -438,7 +581,10 @@ int main(int argc, char* argv[]) {
 
         if (format_id == FP32) {
             Fp32LlamaForCausalLM model = Fp32LlamaForCausalLM(m_path, get_opt_model_config(model_id));
-            std::cout << "Finished!" << std::endl << std::endl;
+            std::cout << "Finished!" << std::endl;
+            set_print_yellow();
+            std::cout << "Available commands: /show (display settings), /set <param> <value> (change setting), quit" << std::endl << std::endl;
+            set_print_reset();
 
             // Get input from the user
             while (true) {
@@ -468,6 +614,28 @@ int main(int argc, char* argv[]) {
                 }
                 if (input == "quit" || input == "Quit" || input == "Quit." || input == "quit.")
                     break;
+
+                // Check for /show command
+                if (input == "/show") {
+                    show_generation_config(generation_config);
+                    continue;
+                }
+
+                // Check for /set command
+                if (input.substr(0, 5) == "/set ") {
+                    std::istringstream iss(input.substr(5));
+                    std::string param, value;
+                    if (iss >> param >> value) {
+                        set_generation_param(generation_config, param, value);
+                    } else {
+                        set_print_yellow();
+                        std::cout << "Usage: /set <parameter> <value>\n";
+                        std::cout << "Example: /set temp 0.8\n\n";
+                        set_print_reset();
+                    }
+                    continue;
+                }
+
                 if (instruct) {
                     std::cout << "ASSISTANT: ";
                     if (isCodeLLaMA(target_model)) {
@@ -501,8 +669,11 @@ int main(int argc, char* argv[]) {
         } else if (format_id == INT4) {
             m_path = "INT4/" + m_path;
             Int4LlamaForCausalLM model = Int4LlamaForCausalLM(m_path, get_opt_model_config(model_id));
-            std::cout << "Finished!" << std::endl << std::endl;
-            
+            std::cout << "Finished!" << std::endl;
+            set_print_yellow();
+            std::cout << "Available commands: /show (display settings), /set <param> <value> (change setting), quit" << std::endl << std::endl;
+            set_print_reset();
+
             // Get input from the user
             while (true) {
                 std::string input;
@@ -531,6 +702,28 @@ int main(int argc, char* argv[]) {
                 }
                 if (input == "quit" || input == "Quit" || input == "Quit." || input == "quit.")
                     break;
+
+                // Check for /show command
+                if (input == "/show") {
+                    show_generation_config(generation_config);
+                    continue;
+                }
+
+                // Check for /set command
+                if (input.substr(0, 5) == "/set ") {
+                    std::istringstream iss(input.substr(5));
+                    std::string param, value;
+                    if (iss >> param >> value) {
+                        set_generation_param(generation_config, param, value);
+                    } else {
+                        set_print_yellow();
+                        std::cout << "Usage: /set <parameter> <value>\n";
+                        std::cout << "Example: /set temp 0.8\n\n";
+                        set_print_reset();
+                    }
+                    continue;
+                }
+
                 if (instruct) {
                     std::cout << "ASSISTANT: ";
                     if (isCodeLLaMA(target_model)) {
