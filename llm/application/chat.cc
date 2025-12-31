@@ -6,203 +6,7 @@
 
 #include "Generate.h"
 #include "interface.h"
-
-std::map<std::string, int> model_config = {
-    {"OPT_125m", OPT_125M},         {"OPT_1.3B", OPT_1_3B},               {"OPT_6.7B", OPT_6_7B}, {"LLaMA_7B", LLaMA_7B},
-    {"7b", LLaMA_7B},               {"LLaMA2_7B_chat", LLaMA_7B},         {"13b", LLaMA_13B},     {"LLaMA2_13B_chat", LLaMA_13B},
-    {"CodeLLaMA_7B_Instruct", CodeLLaMA_7B},                              {"CodeLLaMA_13B_Instruct", CodeLLaMA_13B}, 
-    {"StarCoder", StarCoder_15_5B}, {"StarCoder_15.5B", StarCoder_15_5B}, {"LLaVA_7B", LLaVA_7B}, {"LLaVA_13B", LLaVA_13B}, 
-    {"VILA_2.7B", VILA_2_7B},       {"VILA_7B", VILA_7B},                 {"VILA_13B", VILA_13B}, {"Clip_ViT_Large", Clip_ViT_Large}, 
-    {"Mistral_7B", Mistral_7B},     {"LLaMA_3_8B_Instruct", LLaMA_3_8B},  {"VILA1.5_8B", VILA1_5_8B},
-};
-
-std::map<std::string, std::string> model_path = {{"OPT_125m", "models/OPT_125m"},
-                                                 {"OPT_1.3B", "models/OPT_1.3B"},
-                                                 {"OPT_6.7B", "models/OPT_6.7B"},
-                                                 {"LLaMA_7B", "models/LLaMA_7B"},
-                                                 {"LLaMA2_7B_chat", "models/LLaMA_7B_2_chat"},
-                                                 {"LLaMA2_13B_chat", "models/LLaMA_13B_2_chat"},
-                                                 {"7b", "models/LLaMA_7B_2_chat"},
-                                                 {"13b", "models/LLaMA_13B_2_chat"},
-                                                 {"CodeLLaMA_7B_Instruct", "models/CodeLLaMA_7B_Instruct"},
-                                                 {"CodeLLaMA_13B_Instruct", "models/CodeLLaMA_13B_Instruct"},
-                                                 {"StarCoder", "models/StarCoder"},
-                                                 {"StarCoder_15.5B", "models/StarCoder"},
-                                                 {"LLaVA_7B", "models/LLaVA_7B"},
-                                                 {"LLaVA_13B", "models/LLaVA_13B"},
-                                                 {"VILA_2.7B", "models/VILA_2.7B"},
-                                                 {"VILA_7B", "models/VILA_7B"},
-                                                 {"VILA_13B", "models/VILA_13B"},
-                                                 {"Clip_ViT_Large", "models/CLIP_ViT_Large"},
-                                                 {"Mistral_7B", "models/Mistral_7B"},
-                                                 {"LLaMA_3_8B_Instruct", "models/LLaMA_3_8B_Instruct"},
-                                                 {"VILA1.5_8B", "models/VILA1.5_8B"},
-                                                 };
-
-std::map<std::string, int> data_format_list = {
-    {"FP32", FP32}, {"INT8", QINT8}, {"INT4", INT4}, {"int4", INT4}, {"fp32", FP32},
-};
-
-bool isLLaMA3(std::string s) {
-    std::string LLaMA_prefix = "LLaMA_3";
-    if (s.substr(0, LLaMA_prefix.size()) == LLaMA_prefix)
-        return true;
-    else
-        return false;
-}
-
-bool isLLaMA(std::string s) {
-    std::string LLaMA_prefix = "LLaMA";
-    std::string CodeLLaMA_prefix = "CodeLLaMA";
-    if (s.substr(0, LLaMA_prefix.size()) == LLaMA_prefix || s.substr(0, CodeLLaMA_prefix.size()) == CodeLLaMA_prefix || s == "7b" || s == "13b")
-        return true;
-    else
-        return false;
-}
-
-bool isCodeLLaMA(std::string s) {
-    std::string CodeLLaMA_prefix = "CodeLLaMA";
-    if (s.substr(0, CodeLLaMA_prefix.size()) == CodeLLaMA_prefix)
-        return true;
-    else
-        return false;
-}
-
-bool isStarCoder(std::string s) {
-    std::string StarCoder_prefix = "StarCoder";
-    if (s.substr(0, StarCoder_prefix.size()) == StarCoder_prefix)
-        return true;
-    else
-        return false;
-}
-
-bool isLLaVA(std::string s) {
-    std::string LLaVA_prefix = "LLaVA";
-    if (s.substr(0, LLaVA_prefix.size()) == LLaVA_prefix)
-        return true;
-    else
-        return false;
-}
-
-bool isVILA1_5(std::string s) {
-    std::string VILA_prefix = "VILA1.5";
-    if (s.substr(0, VILA_prefix.size()) == VILA_prefix)
-        return true;
-    else
-        return false;
-}
-
-bool isVILA(std::string s) {
-    std::string VILA_prefix = "VILA";
-    if (s.substr(0, VILA_prefix.size()) == VILA_prefix)
-        return true;
-    else
-        return false;
-}
-
-bool isMistral(std::string s) {
-    std::string Mistral_prefix = "Mistral";
-    if (s.substr(0, Mistral_prefix.size()) == Mistral_prefix)
-        return true;
-    else
-        return false;
-}
-
-bool convertToBool(const char* str) {
-    if (strcmp(str, "true") == 0 || strcmp(str, "1") == 0) {
-        return true;
-    }
-    else if (strcmp(str, "false") == 0 || strcmp(str, "0") == 0) {
-        return false;
-    }
-    else {
-        std::cerr << "Error: Invalid boolean value: " << str << std::endl;
-        exit(EXIT_FAILURE);
-    }
-}
-
-// Helper function to display generation config
-void show_generation_config(const struct opt_params& config) {
-    set_print_yellow();
-    std::cout << "\n=== Generation Parameters ===\n";
-    std::cout << "n_ctx:             " << config.n_ctx << " (penalty window)\n";
-    std::cout << "temp:              " << config.temp << "\n";
-    std::cout << "top_p:             " << config.top_p << "\n";
-    std::cout << "top_k:             " << config.top_k << "\n";
-    std::cout << "repeat_penalty:    " << config.repeat_penalty << "\n";
-    std::cout << "frequency_penalty: " << config.frequency_penalty << "\n";
-    std::cout << "presence_penalty:  " << config.presence_penalty << "\n";
-    std::cout << "============================\n\n";
-    set_print_reset();
-}
-
-// Helper function to parse and set config value
-bool set_generation_param(struct opt_params& config, const std::string& param, const std::string& value_str) {
-    try {
-        if (param == "n_ctx") {
-            int val = std::stoi(value_str);
-            if (val < 1) {
-                std::cerr << "Error: n_ctx must be >= 1\n";
-                return false;
-            }
-            config.n_ctx = val;
-        } else if (param == "temp") {
-            float val = std::stof(value_str);
-            if (val < 0.0f || val > 2.0f) {
-                std::cerr << "Error: temp must be between 0.0 and 2.0\n";
-                return false;
-            }
-            config.temp = val;
-        } else if (param == "top_p") {
-            float val = std::stof(value_str);
-            if (val < 0.0f || val > 1.0f) {
-                std::cerr << "Error: top_p must be between 0.0 and 1.0\n";
-                return false;
-            }
-            config.top_p = val;
-        } else if (param == "top_k") {
-            int val = std::stoi(value_str);
-            if (val < 0) {
-                std::cerr << "Error: top_k must be >= 0 (0 = disabled)\n";
-                return false;
-            }
-            config.top_k = val;
-        } else if (param == "repeat_penalty") {
-            float val = std::stof(value_str);
-            if (val < 0.0f || val > 2.0f) {
-                std::cerr << "Error: repeat_penalty must be between 0.0 and 2.0\n";
-                return false;
-            }
-            config.repeat_penalty = val;
-        } else if (param == "frequency_penalty") {
-            float val = std::stof(value_str);
-            if (val < -2.0f || val > 2.0f) {
-                std::cerr << "Error: frequency_penalty must be between -2.0 and 2.0\n";
-                return false;
-            }
-            config.frequency_penalty = val;
-        } else if (param == "presence_penalty") {
-            float val = std::stof(value_str);
-            if (val < -2.0f || val > 2.0f) {
-                std::cerr << "Error: presence_penalty must be between -2.0 and 2.0\n";
-                return false;
-            }
-            config.presence_penalty = val;
-        } else {
-            std::cerr << "Error: Unknown parameter '" << param << "'\n";
-            std::cerr << "Available: n_ctx, temp, top_p, top_k, repeat_penalty, frequency_penalty, presence_penalty\n";
-            return false;
-        }
-
-        set_print_yellow();
-        std::cout << "Set " << param << " = " << value_str << "\n\n";
-        set_print_reset();
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Error: Invalid value '" << value_str << "'\n";
-        return false;
-    }
-}
+#include "model_config.h"
 
 int NUM_THREAD = 5;
 
@@ -248,11 +52,11 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        if (model_config.count(target_model) == 0) {
+        if (!is_valid_model(target_model)) {
             std::cerr << "Model config:" << target_str << " unsupported" << std::endl;
             std::cerr << "Please select one of the following:";
-            for (const auto& k : model_config) {
-                std::cerr << k.first << ", ";
+            for (const auto& k : get_supported_models()) {
+                std::cerr << k << ", ";
             }
             std::cerr << std::endl;
             throw("Unsupported model\n");
@@ -260,11 +64,11 @@ int main(int argc, char* argv[]) {
         std::cout << "Using model: " << argv[1] << std::endl;
 
         auto data_format_input = argv[2];
-        if (data_format_list.count(data_format_input) == 0) {
+        if (!is_valid_format(data_format_input)) {
             std::cerr << "Data format:" << data_format_input << " unsupported" << std::endl;
             std::cerr << "Please select one of the following: ";
-            for (const auto& k : data_format_list) {
-                std::cerr << k.first << ", ";
+            for (const auto& k : get_supported_formats()) {
+                std::cerr << k << ", ";
             }
             std::cerr << std::endl;
             throw("Unsupported data format\n");
@@ -277,11 +81,11 @@ int main(int argc, char* argv[]) {
     } else if (argc == 2) {
         auto target_str = argv[1];
         target_model = argv[1];
-        if (model_config.count(target_model) == 0) {
+        if (!is_valid_model(target_model)) {
             std::cerr << "Model config:" << target_str << " unsupported" << std::endl;
             std::cerr << "Please select one of the following: ";
-            for (const auto& k : model_config) {
-                std::cerr << k.first << ", ";
+            for (const auto& k : get_supported_models()) {
+                std::cerr << k << ", ";
             }
             std::cerr << std::endl;
             throw("Unsupported model\n");
@@ -306,7 +110,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (isLLaMA3(target_model)) {
-        int format_id = data_format_list[target_data_format];
+        int format_id = get_data_format_id(target_data_format);
 
         // Voicechat instructions
         if (use_voicechat) {
@@ -319,24 +123,14 @@ int main(int argc, char* argv[]) {
 
         // Load model
         std::cout << "Loading model... " << std::flush;
-        int model_id = model_config[target_model];
-        std::string m_path = model_path[target_model];
+        int model_id = get_model_id(target_model);
+        std::string m_path = get_model_path(target_model);
 
         #ifdef MODEL_PREFIX
         m_path = MODEL_PREFIX + m_path;
         #endif
 
-        struct opt_params generation_config;
-        generation_config.n_predict = 2048;
-        generation_config.n_ctx = 512;
-        generation_config.repeat_last_n = -1;
-        generation_config.repeat_penalty = 1.1f;
-        generation_config.temp = 0.7f;
-        generation_config.n_vocab = 128256;
-        generation_config.top_p = 0.9f;
-        generation_config.top_k = 40;
-        generation_config.frequency_penalty = 0.0f;
-        generation_config.presence_penalty = 0.0f;
+        struct opt_params generation_config = get_llama3_default_config();
 
         bool first_prompt = true;
 
@@ -427,12 +221,9 @@ int main(int argc, char* argv[]) {
                     std::cout << "ASSISTANT: ";
                 }
 
+                input = build_llama3_prompt(input, first_prompt);
                 if (first_prompt) {
-                    input = "A chat between a curious human (\"Human\") and an artificial intelligence assistant (\"Assistant\"). The assistant gives detailed, helpful, and polite answers to the human's questions.\n\nHuman: " + input + "\nAssistant: ";
                     first_prompt = false;
-                }
-                else {
-                    input = "Human: " + input + "\nAssistant: \n";
                 }
 
                 LLaMA3Generate(m_path, &model, LLaMA_FP32, input, generation_config, "models/llama3_vocab.bin", true, false);
@@ -525,12 +316,9 @@ int main(int argc, char* argv[]) {
                     std::cout << "ASSISTANT: ";
                 }
 
+                input = build_llama3_prompt(input, first_prompt);
                 if (first_prompt) {
-                    input = "A chat between a curious human (\"Human\") and an artificial intelligence assistant (\"Assistant\"). The assistant gives detailed, helpful, and polite answers to the human's questions.\n\nHuman: " + input + "\nAssistant: ";
                     first_prompt = false;
-                }
-                else {
-                    input = "Human: " + input + "\nAssistant: \n";
                 }
 
                 LLaMA3Generate(m_path, &model, LLaMA_INT4, input, generation_config, "models/llama3_vocab.bin", true, use_voicechat);
@@ -540,7 +328,7 @@ int main(int argc, char* argv[]) {
             std::cerr << "At this time, we only support FP32 and INT4 for LLaMA_3_8B_Instruct." << std::endl;
         }
     } else if (isLLaMA(target_model)) {
-        int format_id = data_format_list[target_data_format];
+        int format_id = get_data_format_id(target_data_format);
 
         // Voicechat instructions
         if (use_voicechat) {
@@ -553,29 +341,14 @@ int main(int argc, char* argv[]) {
 
         // Load model
         std::cout << "Loading model... " << std::flush;
-        int model_id = model_config[target_model];
-        std::string m_path = model_path[target_model];
+        int model_id = get_model_id(target_model);
+        std::string m_path = get_model_path(target_model);
 
         #ifdef MODEL_PREFIX
         m_path = MODEL_PREFIX + m_path;
         #endif
 
-        struct opt_params generation_config;
-        generation_config.n_predict = 512;
-        generation_config.n_ctx = 512;
-        generation_config.repeat_last_n = -1;
-        generation_config.repeat_penalty = 1.1f;
-        generation_config.temp = 0.2f;
-        generation_config.top_k = 40;
-        generation_config.top_p = 0.95f;
-        generation_config.frequency_penalty = 0.0f;
-        generation_config.presence_penalty = 0.0f;
-        if(isCodeLLaMA(target_model)) {
-            generation_config.n_vocab = 32016;
-        }
-        else {
-            generation_config.n_vocab = 32000;
-        }
+        struct opt_params generation_config = get_llama_default_config(target_model);
 
         bool first_prompt = true;
 
@@ -638,30 +411,15 @@ int main(int argc, char* argv[]) {
 
                 if (instruct) {
                     std::cout << "ASSISTANT: ";
-                    if (isCodeLLaMA(target_model)) {
-                        if (first_prompt) {
-                            input = "<s>[INST] " + input + " [/INST] ";
-                            first_prompt = false;
-                        }
-                        else {
-                            input = " </s> <s>[INST] " + input + " [/INST] ";
-                        }
-                    }
-                }
-                else {
+                } else {
                     if (isCodeLLaMA(target_model)) {
                         std::cout << input;
                     }
                 }
 
-                if (!isCodeLLaMA(target_model)) {
-                    if (first_prompt) {
-                        input = "A chat between a curious human (\"Human\") and an artificial intelligence assistant (\"Assistant\"). The assistant gives helpful, detailed, and polite answers to the human's questions.\n\n### Human: " + input + "\n### Assistant: ";
-                        first_prompt = false;
-                    }
-                    else {
-                        input = "### Human: " + input + "\n### Assistant: \n";
-                    }
+                input = build_llama_prompt(input, first_prompt, isCodeLLaMA(target_model));
+                if (first_prompt) {
+                    first_prompt = false;
                 }
 
                 LLaMAGenerate(m_path, &model, LLaMA_FP32, input, generation_config, "models/llama_vocab.bin", true, false);
@@ -726,31 +484,17 @@ int main(int argc, char* argv[]) {
 
                 if (instruct) {
                     std::cout << "ASSISTANT: ";
-                    if (isCodeLLaMA(target_model)) {
-                        if (first_prompt) {
-                            input = "<s>[INST] " + input + " [/INST] ";
-                            first_prompt = false;
-                        }
-                        else {
-                            input = " </s> <s>[INST] " + input + " [/INST] ";
-                        }
-                    }
-                }
-                else {
+                } else {
                     if (isCodeLLaMA(target_model)) {
                         std::cout << input;
                     }
                 }
 
-                if (!isCodeLLaMA(target_model)) {
-                    if (first_prompt) {
-                        input = "A chat between a curious human (\"Human\") and an artificial intelligence assistant (\"Assistant\"). The assistant gives helpful, detailed, and polite answers to the human's questions.\n\n### Human: " + input + "\n### Assistant: ";
-                        first_prompt = false;
-                    }
-                    else {
-                        input = "### Human: " + input + "\n### Assistant: \n";
-                    }
+                input = build_llama_prompt(input, first_prompt, isCodeLLaMA(target_model));
+                if (first_prompt) {
+                    first_prompt = false;
                 }
+
                 LLaMAGenerate(m_path, &model, LLaMA_INT4, input, generation_config, "models/llama_vocab.bin", true, use_voicechat);
             }
         } else {
@@ -758,23 +502,18 @@ int main(int argc, char* argv[]) {
             std::cerr << "At this time, we only support FP32 and INT4 for LLaMA_7B." << std::endl;
         }
     } else if (isStarCoder(target_model)) {
-        int format_id = data_format_list[target_data_format];
+        int format_id = get_data_format_id(target_data_format);
 
         // Load model
         std::cout << "Loading model... " << std::flush;
-        int model_id = model_config[target_model];
-        std::string m_path = model_path[target_model];
+        int model_id = get_model_id(target_model);
+        std::string m_path = get_model_path(target_model);
 
         #ifdef MODEL_PREFIX
         m_path = MODEL_PREFIX + m_path;
         #endif
 
-        struct opt_params generation_config;
-        generation_config.n_predict = 128;
-        // generation_config.repeat_penalty = 1.1f;
-        generation_config.top_k = 0;
-        generation_config.temp = 0.2f;
-        generation_config.n_vocab = 49152;
+        struct opt_params generation_config = get_starcoder_default_config();
 
         if (format_id == FP32) {
             Fp32GPTBigCodeForCausalLM model = Fp32GPTBigCodeForCausalLM(m_path, get_opt_model_config(model_id));
@@ -820,7 +559,7 @@ int main(int argc, char* argv[]) {
             std::cerr << "At this time, we only support FP32 and INT4 for StarCoder." << std::endl;
         }
     } else if (isLLaVA(target_model)) {
-        int format_id = data_format_list[target_data_format];
+        int format_id = get_data_format_id(target_data_format);
 
         // Voicechat instructions
         if (use_voicechat) {
@@ -833,21 +572,17 @@ int main(int argc, char* argv[]) {
 
         // Load model
         std::cout << "Loading model... " << std::flush;
-        std::string clip_m_path = model_path["Clip_ViT_Large"];
-        std::string llama_m_path = model_path[target_model];
+        std::string clip_m_path = get_model_path("Clip_ViT_Large");
+        std::string llama_m_path = get_model_path(target_model);
 
-        int clip_model_id = model_config["Clip_ViT_Large"];
-        int llama_model_id = model_config[target_model];
+        int clip_model_id = get_model_id("Clip_ViT_Large");
+        int llama_model_id = get_model_id(target_model);
 
         #ifdef MODEL_PREFIX
         llama_m_path = MODEL_PREFIX + llama_m_path;
         #endif
 
-        struct opt_params generation_config;
-        generation_config.n_predict = 512;
-        generation_config.repeat_penalty = 1.1f;
-        generation_config.temp = 0.2f;
-        generation_config.n_vocab = 32000;
+        struct opt_params generation_config = get_llava_default_config();
 
         int prompt_iter = 0;
 
@@ -894,17 +629,8 @@ int main(int argc, char* argv[]) {
                     std::cout << "ASSISTANT: ";
                 }
 
-                if (prompt_iter == 0) {
-                    input = "This is a chat between a user and an assistant.\n\n### USER: ";
-                    prompt_iter += 1;
-                }
-                else if (prompt_iter == 1) {
-                    input = "\n" + input + "\n### ASSISTANT:";
-                    prompt_iter += 1;
-                }
-                else {
-                    input = "### USER: " + input + "\n### ASSISTANT: \n";
-                }
+                input = build_llava_prompt(input, prompt_iter);
+                prompt_iter++;
 
                 LLaVAGenerate(llama_m_path, &llama_model, clip_m_path, &clip_model, LLaVA_FP32, input, img_path, generation_config, "models/llama_vocab.bin", true, false, false);
             }
@@ -952,17 +678,8 @@ int main(int argc, char* argv[]) {
                     std::cout << "ASSISTANT: ";
                 }
 
-                if (prompt_iter == 0) {
-                    input = "This is a chat between a user and an assistant.\n\n### USER: ";
-                    prompt_iter += 1;
-                }
-                else if (prompt_iter == 1) {
-                    input = "\n" + input + "\n### ASSISTANT:";
-                    prompt_iter += 1;
-                }
-                else {
-                    input = "### USER: " + input + "\n### ASSISTANT: \n";
-                }
+                input = build_llava_prompt(input, prompt_iter);
+                prompt_iter++;
 
                 LLaVAGenerate(llama_m_path, &llama_model, clip_m_path, &clip_model, LLaVA_INT4, input, img_path, generation_config, "models/llama_vocab.bin", true, use_voicechat, false);
             }
@@ -971,7 +688,7 @@ int main(int argc, char* argv[]) {
             std::cerr << "At this time, we only support FP32 and INT4 for LLaVA_7B." << std::endl;
         }
     } else if (isVILA1_5(target_model)) {
-        int format_id = data_format_list[target_data_format];
+        int format_id = get_data_format_id(target_data_format);
 
         // Voicechat instructions
         if (use_voicechat) {
@@ -984,22 +701,17 @@ int main(int argc, char* argv[]) {
 
         // Load model
         std::cout << "Loading model... " << std::flush;
-        std::string clip_m_path = model_path["Clip_ViT_Large"];
-        std::string llama_m_path = model_path[target_model];
+        std::string clip_m_path = get_model_path("Clip_ViT_Large");
+        std::string llama_m_path = get_model_path(target_model);
 
-        int clip_model_id = model_config["Clip_ViT_Large"];
-        int llama_model_id = model_config[target_model];
+        int clip_model_id = get_model_id("Clip_ViT_Large");
+        int llama_model_id = get_model_id(target_model);
 
         #ifdef MODEL_PREFIX
         llama_m_path = MODEL_PREFIX + llama_m_path;
         #endif
 
-        struct opt_params generation_config;
-        generation_config.n_predict = 512;
-        generation_config.repeat_penalty = 1.1f;
-        generation_config.temp = 0.2f;
-        generation_config.n_vocab = 32000;
-        generation_config.top_p = 1.0f;
+        struct opt_params generation_config = get_vila_default_config();
 
         int prompt_iter = 0;
 
@@ -1046,17 +758,8 @@ int main(int argc, char* argv[]) {
                     std::cout << "ASSISTANT: ";
                 }
 
-                if (prompt_iter == 0) {
-                    input = "This is a chat between a user and an assistant.\n\n### USER: ";
-                    prompt_iter += 1;
-                }
-                else if (prompt_iter == 1) {
-                    input = "\n" + input + "\n### ASSISTANT:";
-                    prompt_iter += 1;
-                }
-                else {
-                    input = "### USER: " + input + "\n### ASSISTANT: \n";
-                }
+                input = build_llava_prompt(input, prompt_iter);
+                prompt_iter++;
 
                 LLaVAGenerate(llama_m_path, &llama_model, clip_m_path, &clip_model, VILA_FP32, input, img_path, generation_config, "models/llama_vocab.bin", true, false, true);
             }
@@ -1104,17 +807,8 @@ int main(int argc, char* argv[]) {
                     std::cout << "ASSISTANT: ";
                 }
 
-                if (prompt_iter == 0) {
-                    input = "This is a chat between a user and an assistant.\n\n### USER: ";
-                    prompt_iter += 1;
-                }
-                else if (prompt_iter == 1) {
-                    input = "\n" + input + "\n### ASSISTANT:";
-                    prompt_iter += 1;
-                }
-                else {
-                    input = "### USER: " + input + "\n### ASSISTANT: \n";
-                }
+                input = build_llava_prompt(input, prompt_iter);
+                prompt_iter++;
 
                 LLaVAGenerate(llama_m_path, &llama_model, clip_m_path, &clip_model, VILA_INT4, input, img_path, generation_config, "models/llama_vocab.bin", true, use_voicechat, true);
             }
@@ -1123,7 +817,7 @@ int main(int argc, char* argv[]) {
             std::cerr << "At this time, we only support FP32 and INT4 for VILA1.5_8B." << std::endl;
         }
     } else if (isVILA(target_model)) {
-        int format_id = data_format_list[target_data_format];
+        int format_id = get_data_format_id(target_data_format);
 
         // Voicechat instructions
         if (use_voicechat) {
@@ -1136,22 +830,17 @@ int main(int argc, char* argv[]) {
 
         // Load model
         std::cout << "Loading model... " << std::flush;
-        std::string clip_m_path = model_path["Clip_ViT_Large"];
-        std::string llama_m_path = model_path[target_model];
+        std::string clip_m_path = get_model_path("Clip_ViT_Large");
+        std::string llama_m_path = get_model_path(target_model);
 
-        int clip_model_id = model_config["Clip_ViT_Large"];
-        int llama_model_id = model_config[target_model];
+        int clip_model_id = get_model_id("Clip_ViT_Large");
+        int llama_model_id = get_model_id(target_model);
 
         #ifdef MODEL_PREFIX
         llama_m_path = MODEL_PREFIX + llama_m_path;
         #endif
 
-        struct opt_params generation_config;
-        generation_config.n_predict = 512;
-        generation_config.repeat_penalty = 1.1f;
-        generation_config.temp = 0.2f;
-        generation_config.n_vocab = 32000;
-        generation_config.top_p = 1.0f;
+        struct opt_params generation_config = get_vila_default_config();
 
         int prompt_iter = 0;
 
@@ -1198,17 +887,8 @@ int main(int argc, char* argv[]) {
                     std::cout << "ASSISTANT: ";
                 }
 
-                if (prompt_iter == 0) {
-                    input = "This is a chat between a user and an assistant.\n\n### USER: ";
-                    prompt_iter += 1;
-                }
-                else if (prompt_iter == 1) {
-                    input = "\n" + input + "\n### ASSISTANT:";
-                    prompt_iter += 1;
-                }
-                else {
-                    input = "### USER: " + input + "\n### ASSISTANT: \n";
-                }
+                input = build_llava_prompt(input, prompt_iter);
+                prompt_iter++;
 
                 LLaVAGenerate(llama_m_path, &llama_model, clip_m_path, &clip_model, VILA_FP32, input, img_path, generation_config, "models/llama_vocab.bin", true, false, true);
             }
@@ -1256,17 +936,8 @@ int main(int argc, char* argv[]) {
                     std::cout << "ASSISTANT: ";
                 }
 
-                if (prompt_iter == 0) {
-                    input = "This is a chat between a user and an assistant.\n\n### USER: ";
-                    prompt_iter += 1;
-                }
-                else if (prompt_iter == 1) {
-                    input = "\n" + input + "\n### ASSISTANT:";
-                    prompt_iter += 1;
-                }
-                else {
-                    input = "### USER: " + input + "\n### ASSISTANT: \n";
-                }
+                input = build_llava_prompt(input, prompt_iter);
+                prompt_iter++;
 
                 LLaVAGenerate(llama_m_path, &llama_model, clip_m_path, &clip_model, VILA_INT4, input, img_path, generation_config, "models/llama_vocab.bin", true, use_voicechat, true);
             }
@@ -1275,7 +946,7 @@ int main(int argc, char* argv[]) {
             std::cerr << "At this time, we only support FP32 and INT4 for VILA_7B." << std::endl;
         }
     } else if (isMistral(target_model)) {
-        int format_id = data_format_list[target_data_format];
+        int format_id = get_data_format_id(target_data_format);
 
         // Voicechat instructions
         if (use_voicechat) {
@@ -1288,18 +959,14 @@ int main(int argc, char* argv[]) {
 
         // Load model
         std::cout << "Loading model... " << std::flush;
-        int model_id = model_config[target_model];
-        std::string m_path = model_path[target_model];
+        int model_id = get_model_id(target_model);
+        std::string m_path = get_model_path(target_model);
 
         #ifdef MODEL_PREFIX
         m_path = MODEL_PREFIX + m_path;
         #endif
 
-        struct opt_params generation_config;
-        generation_config.n_predict = 512;
-        generation_config.repeat_penalty = 1.0f;
-        generation_config.temp = 0.3f;
-        generation_config.n_vocab = 32000;
+        struct opt_params generation_config = get_mistral_default_config();
 
         bool first_prompt = true;
 
@@ -1337,22 +1004,9 @@ int main(int argc, char* argv[]) {
                     break;
 
                 std::cout << "ASSISTANT: ";
-                if (instruct) {
-                    if (first_prompt) {
-                        input = "<s>[INST] " + input + " [/INST] ";
-                        first_prompt = false;
-                    }
-                    else {
-                        input = " </s> <s>[INST] " + input + " [/INST] ";
-                    }
-                } else {
-                    if (first_prompt) {
-                        input = "A chat between a curious human (\"Human\") and an artificial intelligence assistant (\"Assistant\"). The assistant gives helpful, detailed, and polite answers to the human's questions.\n\n### Human: " + input + "\n### Assistant: ";
-                        first_prompt = false;
-                    }
-                    else {
-                        input = "### Human: " + input + "\n### Assistant: \n";
-                    }
+                input = build_mistral_prompt(input, first_prompt, instruct);
+                if (first_prompt) {
+                    first_prompt = false;
                 }
 
                 MistralGenerate(m_path, &model, LLaMA_FP32, input, generation_config, "models/mistral_vocab.bin", true, false);
@@ -1392,22 +1046,9 @@ int main(int argc, char* argv[]) {
                     break;
 
                 std::cout << "ASSISTANT: ";
-                if (instruct) {
-                    if (first_prompt) {
-                        input = "<s>[INST] " + input + " [/INST] ";
-                        first_prompt = false;
-                    }
-                    else {
-                        input = " </s> <s>[INST] " + input + " [/INST] ";
-                    }
-                } else {
-                    if (first_prompt) {
-                        input = "A chat between a curious human (\"Human\") and an artificial intelligence assistant (\"Assistant\"). The assistant gives helpful, detailed, and polite answers to the human's questions.\n\n### Human: " + input + "\n### Assistant: ";
-                        first_prompt = false;
-                    }
-                    else {
-                        input = "### Human: " + input + "\n### Assistant: \n";
-                    }
+                input = build_mistral_prompt(input, first_prompt, instruct);
+                if (first_prompt) {
+                    first_prompt = false;
                 }
 
                 MistralGenerate(m_path, &model, LLaMA_INT4, input, generation_config, "models/mistral_vocab.bin", true, use_voicechat);
@@ -1423,9 +1064,9 @@ int main(int argc, char* argv[]) {
 #else
         // Load model
         std::cout << "Loading model... " << std::flush;
-        int model_id = model_config[target_model];
-        std::string m_path = model_path[target_model];
-        int format_id = data_format_list[target_data_format];
+        int model_id = get_model_id(target_model);
+        std::string m_path = get_model_path(target_model);
+        int format_id = get_data_format_id(target_data_format);
 
         // Load encoder
         std::string bpe_file = "models/opt_merges.txt";
