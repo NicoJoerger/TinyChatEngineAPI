@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <iostream>
+#include <stdexcept>
 
 #include "utils.h"
 
@@ -40,6 +41,7 @@ Int4llamaDecoder::Int4llamaDecoder(std::string param_path, const struct model_co
     this->num_heads = config.num_heads;
     this->padding_idx = config.padding_idx;
     this->rms_norm_eps = config.rms_norm_eps;
+    this->max_sqlen = config.max_sqlen;
 
     int max_sqlen = config.max_sqlen;
 
@@ -96,6 +98,21 @@ struct Int4llamaDecoder_output Int4llamaDecoder::forward(std::string param_path,
 
     if (input.has_past_keys_values) {
         past_key_values_length = input.past_keys[0].m_dim_y;
+    }
+
+    // CRITICAL: Check for buffer overflow before proceeding
+    int total_seq_len = sqlen + past_key_values_length;
+    if (total_seq_len > this->max_sqlen) {
+        std::cerr << "\n" << std::string(80, '=') << std::endl;
+        std::cerr << "ERROR: SEQUENCE LENGTH LIMIT EXCEEDED!" << std::endl;
+        std::cerr << std::string(80, '=') << std::endl;
+        std::cerr << "\nCurrent sequence length: " << total_seq_len << " tokens" << std::endl;
+        std::cerr << "Maximum allowed length:  " << this->max_sqlen << " tokens" << std::endl;
+        std::cerr << "\nThe conversation has become too long and exceeds the model's" << std::endl;
+        std::cerr << "context window. Continuing would cause memory corruption." << std::endl;
+        std::cerr << "\nSOLUTION: Type '/new' to reset the conversation and start fresh." << std::endl;
+        std::cerr << "\n" << std::string(80, '=') << std::endl << std::endl;
+        throw std::runtime_error("Sequence length exceeds maximum buffer size - use /new command to reset");
     }
 
     // Attention mask

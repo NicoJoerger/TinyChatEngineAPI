@@ -37,6 +37,22 @@ char* decode(Tokenizer* t, int token);
 int str_lookup(char *str, TokenIndex *sorted_vocab, int vocab_size);
 void encode(Tokenizer* t, const char *text, int8_t bos, int8_t eos, int *tokens, int *n_tokens);
 
+// Static variables for conversation state
+static bool has_past_kv = false;
+static std::vector<Matrix3D<float>> past_keys, past_values;
+
+void LLaMA3ResetConversationState() {
+    // Reset KV cache flag
+    has_past_kv = false;
+
+    // Clear accumulated KV cache vectors
+    // NOTE: This only clears the vector containers (Matrix3D wrappers)
+    // The actual memory is in static buffers in Int4llamaAttention
+    // which are freed/reallocated separately
+    past_keys.clear();
+    past_values.clear();
+}
+
 std::string LLaMA3Generate(std::string param_path, void *model_ptr, int model_type, std::string text, const struct opt_params generation_config,
                           std::string voc_path, bool interactive, bool voicechat) {
     std::vector<int> last_n_tokens(generation_config.n_ctx);
@@ -71,8 +87,6 @@ std::string LLaMA3Generate(std::string param_path, void *model_ptr, int model_ty
 
     int break_cnt = 2;
     bool new_prompt = true;
-    static bool has_past_kv = false;
-    static std::vector<Matrix3D<float>> past_keys, past_values;
     int n_remain = generation_config.n_predict;
     std::string output;
     while (n_remain != 0 && break_cnt) {
@@ -82,44 +96,52 @@ std::string LLaMA3Generate(std::string param_path, void *model_ptr, int model_ty
         if (new_prompt) {
             sqlen = input_ids.size();
         }
-        if (model_type == LLaMA_INT4) {
-            Int4LlamaForCausalLM *model = static_cast<Int4LlamaForCausalLM *>(model_ptr);
-            struct Int4LlamaForCausalLM_output model_output;
-            struct Int4LlamaForCausalLM_input model_input;
-            if (has_past_kv) {
-                Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
-                model_input = {input_ids_mat, past_keys, past_values};
-            } else {
-                Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
-                model_input = {input_ids_mat};
+
+        // Wrap model forward in try-catch to handle sequence length overflow
+        try {
+            if (model_type == LLaMA_INT4) {
+                Int4LlamaForCausalLM *model = static_cast<Int4LlamaForCausalLM *>(model_ptr);
+                struct Int4LlamaForCausalLM_output model_output;
+                struct Int4LlamaForCausalLM_input model_input;
+                if (has_past_kv) {
+                    Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
+                    model_input = {input_ids_mat, past_keys, past_values};
+                } else {
+                    Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
+                    model_input = {input_ids_mat};
+                }
+                if (!new_prompt) STATS_START("Inference latency");
+                model_output = model->forward(param_path, model_input);
+                if (!new_prompt) STATS_END("Inference latency");
+                past_keys = model_output.past_keys;
+                past_values = model_output.past_values;
+                // memcpy model_ouput.logits[-1] to logits
+                memcpy(logits.data(), &model_output.logits.m_data[(sqlen - 1) * generation_config.n_vocab],
+                       generation_config.n_vocab * sizeof(float));
+            } else if (model_type == LLaMA_FP32) {
+                Fp32LlamaForCausalLM *model = static_cast<Fp32LlamaForCausalLM *>(model_ptr);
+                struct Fp32LlamaForCausalLM_output model_output;
+                struct Fp32LlamaForCausalLM_input model_input;
+                if (has_past_kv) {
+                    Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
+                    model_input = {input_ids_mat, past_keys, past_values};
+                } else {
+                    Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
+                    model_input = {input_ids_mat};
+                }
+                if (!new_prompt) STATS_START("Inference latency");
+                model_output = model->forward(model_input);
+                if (!new_prompt) STATS_END("Inference latency");
+                past_keys = model_output.past_keys;
+                past_values = model_output.past_values;
+                // memcpy model_ouput.logits[-1] to logits
+                memcpy(logits.data(), &model_output.logits.m_data[(sqlen - 1) * generation_config.n_vocab],
+                       generation_config.n_vocab * sizeof(float));
             }
-            if (!new_prompt) STATS_START("Inference latency");
-            model_output = model->forward(param_path, model_input);
-            if (!new_prompt) STATS_END("Inference latency");
-            past_keys = model_output.past_keys;
-            past_values = model_output.past_values;
-            // memcpy model_ouput.logits[-1] to logits
-            memcpy(logits.data(), &model_output.logits.m_data[(sqlen - 1) * generation_config.n_vocab],
-                   generation_config.n_vocab * sizeof(float));
-        } else if (model_type == LLaMA_FP32) {
-            Fp32LlamaForCausalLM *model = static_cast<Fp32LlamaForCausalLM *>(model_ptr);
-            struct Fp32LlamaForCausalLM_output model_output;
-            struct Fp32LlamaForCausalLM_input model_input;
-            if (has_past_kv) {
-                Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
-                model_input = {input_ids_mat, past_keys, past_values};
-            } else {
-                Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
-                model_input = {input_ids_mat};
-            }
-            if (!new_prompt) STATS_START("Inference latency");
-            model_output = model->forward(model_input);
-            if (!new_prompt) STATS_END("Inference latency");
-            past_keys = model_output.past_keys;
-            past_values = model_output.past_values;
-            // memcpy model_ouput.logits[-1] to logits
-            memcpy(logits.data(), &model_output.logits.m_data[(sqlen - 1) * generation_config.n_vocab],
-                   generation_config.n_vocab * sizeof(float));
+        } catch (const std::runtime_error& e) {
+            // Sequence length exceeded - stop generation gracefully
+            std::cerr << "\n[Generation stopped due to sequence length limit]" << std::endl;
+            break;  // Exit generation loop
         }
         has_past_kv = true;
 

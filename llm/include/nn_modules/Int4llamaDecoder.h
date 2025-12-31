@@ -61,7 +61,7 @@ class Int4llamaDecoder {
     Int4llamaDecoder(){};
     Matrix3D<float> prepare_decoder_attention_mask(int length, int past_length);
     struct Int4llamaDecoder_output forward(std::string param_path, const struct Int4llamaDecoder_input& input);
-    int voc_size, embed_dim, padding_idx, hidden_dim, num_heads;
+    int voc_size, embed_dim, padding_idx, hidden_dim, num_heads, max_sqlen;
     float rms_norm_eps;
     std::vector<Int4llamaDecoderLayer> layers;
     std::string profile_name = "Int4llamaDecoder";

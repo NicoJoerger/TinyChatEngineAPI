@@ -283,6 +283,33 @@ int main(int argc, char* argv[]) {
                 }
                 if (input == "quit" || input == "Quit" || input == "Quit." || input == "quit.")
                     break;
+
+                // Check for /new command
+                if (input == "/new") {
+                    // 1. Clear conversation state vectors
+                    LLaMA3ResetConversationState();
+
+                    // 2. Get model config for reinitialization
+                    struct model_config config = get_opt_model_config(model_id);
+
+                    // 3. Free and reinitialize all static memory buffers
+                    // This prevents memory leaks by deallocating before reallocating
+                    Int4llamaDecoderLayer::initialize_decoder_memory(config);
+                    Int4llamaAttention::initialized_memory(config);
+
+                    // 4. Reset cache buffer indices
+                    Int4llamaAttention::reset_cache(config);
+
+                    // 5. Reset local state
+                    first_prompt = true;
+
+                    // Show confirmation message
+                    set_print_yellow();
+                    std::cout << "\n[Conversation reset - starting fresh]\n\n";
+                    set_print_reset();
+                    continue;
+                }
+
                 if (instruct) {
                     std::cout << "ASSISTANT: ";
                 }
@@ -330,6 +357,33 @@ int main(int argc, char* argv[]) {
                 }
                 if (input == "quit" || input == "Quit" || input == "Quit." || input == "quit.")
                     break;
+
+                // Check for /new command
+                if (input == "/new") {
+                    // 1. Clear conversation state vectors
+                    LLaMA3ResetConversationState();
+
+                    // 2. Get model config for reinitialization
+                    struct model_config config = get_opt_model_config(model_id);
+
+                    // 3. Free and reinitialize all static memory buffers
+                    // This prevents memory leaks by deallocating before reallocating
+                    Int4llamaDecoderLayer::initialize_decoder_memory(config);
+                    Int4llamaAttention::initialized_memory(config);
+
+                    // 4. Reset cache buffer indices
+                    Int4llamaAttention::reset_cache(config);
+
+                    // 5. Reset local state
+                    first_prompt = true;
+
+                    // Show confirmation message
+                    set_print_yellow();
+                    std::cout << "\n[Conversation reset - starting fresh]\n\n";
+                    set_print_reset();
+                    continue;
+                }
+
                 if (instruct) {
                     std::cout << "ASSISTANT: ";
                 }
@@ -341,7 +395,7 @@ int main(int argc, char* argv[]) {
                 else {
                     input = "Human: " + input + "\nAssistant: \n";
                 }
-                    
+
                 LLaMA3Generate(m_path, &model, LLaMA_INT4, input, generation_config, "models/llama3_vocab.bin", true, use_voicechat);
             }
         } else {

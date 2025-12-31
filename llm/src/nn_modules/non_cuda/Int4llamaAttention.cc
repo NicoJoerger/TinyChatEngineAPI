@@ -4,6 +4,8 @@
 
 #include <array>
 #include <cmath>
+#include <iostream>
+#include <stdexcept>
 #include <vector>
 
 #include "operators.h"
@@ -49,6 +51,133 @@ static void free_cache_buffers() {
     cache_num.clear();
 }
 
+static void free_all_attention_memory() {
+    // Free existing cache buffers
+    free_cache_buffers();
+
+    // Free ALL other static buffers allocated in initialized_memory()
+    if (attn_weights_arr) {
+        deallocate_memory(attn_weights_arr);
+        attn_weights_arr = nullptr;
+    }
+    if (attn_output_fp_arr) {
+        deallocate_memory(attn_output_fp_arr);
+        attn_output_fp_arr = nullptr;
+    }
+    if (attn_output_arr) {
+        deallocate_memory(attn_output_arr);
+        attn_output_arr = nullptr;
+    }
+    if (attn_output_transpose_arr) {
+        deallocate_memory(attn_output_transpose_arr);
+        attn_output_transpose_arr = nullptr;
+    }
+    if (key_states_arr) {
+        deallocate_memory(key_states_arr);
+        key_states_arr = nullptr;
+    }
+    if (value_states_arr) {
+        deallocate_memory(value_states_arr);
+        value_states_arr = nullptr;
+    }
+    if (query_states_arr) {
+        deallocate_memory(query_states_arr);
+        query_states_arr = nullptr;
+    }
+    if (value_states_transpose_arr) {
+        deallocate_memory(value_states_transpose_arr);
+        value_states_transpose_arr = nullptr;
+    }
+    if (query_states_unshape_arr) {
+        deallocate_memory(query_states_unshape_arr);
+        query_states_unshape_arr = nullptr;
+    }
+    if (key_states_unshape_arr) {
+        deallocate_memory(key_states_unshape_arr);
+        key_states_unshape_arr = nullptr;
+    }
+    if (value_states_unshape_arr) {
+        deallocate_memory(value_states_unshape_arr);
+        value_states_unshape_arr = nullptr;
+    }
+    if (final_key_states_arr) {
+        deallocate_memory(final_key_states_arr);
+        final_key_states_arr = nullptr;
+    }
+    if (final_value_states_arr) {
+        deallocate_memory(final_value_states_arr);
+        final_value_states_arr = nullptr;
+    }
+
+#if DEC_SHARED_MEM
+    // Free DEC_SHARED_MEM weight buffers
+    if (q_weight) {
+        deallocate_memory(q_weight);
+        q_weight = nullptr;
+    }
+    if (q_scale_ptr) {
+        deallocate_memory(q_scale_ptr);
+        q_scale_ptr = nullptr;
+    }
+    if (q_offset_ptr) {
+        deallocate_memory(q_offset_ptr);
+        q_offset_ptr = nullptr;
+    }
+    if (q_zero_point_ptr) {
+        deallocate_memory(q_zero_point_ptr);
+        q_zero_point_ptr = nullptr;
+    }
+    if (k_weight) {
+        deallocate_memory(k_weight);
+        k_weight = nullptr;
+    }
+    if (k_scale_ptr) {
+        deallocate_memory(k_scale_ptr);
+        k_scale_ptr = nullptr;
+    }
+    if (k_offset_ptr) {
+        deallocate_memory(k_offset_ptr);
+        k_offset_ptr = nullptr;
+    }
+    if (k_zero_point_ptr) {
+        deallocate_memory(k_zero_point_ptr);
+        k_zero_point_ptr = nullptr;
+    }
+    if (v_weight) {
+        deallocate_memory(v_weight);
+        v_weight = nullptr;
+    }
+    if (v_scale_ptr) {
+        deallocate_memory(v_scale_ptr);
+        v_scale_ptr = nullptr;
+    }
+    if (v_offset_ptr) {
+        deallocate_memory(v_offset_ptr);
+        v_offset_ptr = nullptr;
+    }
+    if (v_zero_point_ptr) {
+        deallocate_memory(v_zero_point_ptr);
+        v_zero_point_ptr = nullptr;
+    }
+    if (o_weight) {
+        deallocate_memory(o_weight);
+        o_weight = nullptr;
+    }
+    if (o_scale_ptr) {
+        deallocate_memory(o_scale_ptr);
+        o_scale_ptr = nullptr;
+    }
+    if (o_offset_ptr) {
+        deallocate_memory(o_offset_ptr);
+        o_offset_ptr = nullptr;
+    }
+    if (o_zero_point_ptr) {
+        deallocate_memory(o_zero_point_ptr);
+        o_zero_point_ptr = nullptr;
+    }
+#endif
+}
+
 #if DEC_SHARED_MEM
 static uint8_t *q_weight, *k_weight, *v_weight, *o_weight;
 static float *q_scale_ptr, *q_offset_ptr, *q_zero_point_ptr;
@@ -57,10 +186,14 @@ static float *v_scale_ptr, *v_offset_ptr, *v_zero_point_ptr;
 static float *o_scale_ptr, *o_offset_ptr, *o_zero_point_ptr;
 #endif
 
+void Int4llamaAttention::reset_cache(const struct model_config config) {
+    // Reset cache buffer indices to 0 for all layers
+    cache_num.assign(config.num_layers, 0);
+}
+
 void Int4llamaAttention::initialized_memory(const struct model_config config) {
-    if (!key_states_arr_cache.empty() || !value_states_arr_cache.empty()) {
-        free_cache_buffers();
-    }
+    // CRITICAL: Free all existing memory before reallocating to prevent leaks
+    free_all_attention_memory();
 
     allocate_aligned_memory(attn_weights_arr, config.num_heads * config.max_sqlen * config.max_sqlen * sizeof(float));
     allocate_aligned_memory(attn_output_fp_arr, config.max_sqlen * config.embed_dim * sizeof(float));
@@ -212,6 +345,7 @@ Int4llamaAttention::Int4llamaAttention(std::string param_path, const struct mode
     this->embed_dim = config.embed_dim;
     this->num_heads = config.num_heads;
     this->num_kv_heads = config.num_kv_heads;
+    this->max_sqlen = config.max_sqlen;
     assert(config.embed_dim % config.num_heads == 0);
     this->head_dim = config.embed_dim / config.num_heads;
 
@@ -389,6 +523,13 @@ struct Int4llamaAttention_output Int4llamaAttention::forward(std::string param_p
         // # reuse k, v, self_attention
         assert(input.past_key.m_dim_z == this->head_dim);
         tgz += input.past_key.m_dim_y;
+
+        // SAFETY: Secondary bounds check (should be caught earlier in decoder)
+        if (tgz > this->max_sqlen) {
+            std::cerr << "\n[CRITICAL] Attention layer detected sequence overflow: "
+                      << tgz << " > " << this->max_sqlen << std::endl;
+            throw std::runtime_error("Attention buffer overflow prevented");
+        }
         float *val_ptr = ret_value_states, *key_ptr = ret_key_states;
         int past_block = input.past_key.m_dim_y * input.past_key.m_dim_z;
         int sq_block = sqlen * this->head_dim;

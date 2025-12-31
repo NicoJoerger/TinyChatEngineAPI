@@ -56,6 +56,7 @@ class Int4llamaAttention {
     Int4llamaAttention(std::string param_path, const struct model_config config, int layer_idx);
     Int4llamaAttention() {}
     static void initialized_memory(const struct model_config config);
+    static void reset_cache(const struct model_config config);
     struct Int4llamaAttention_output forward(std::string param_path, const struct Int4llamaAttention_input &input);
 
 #if !(DEC_SHARED_MEM)
@@ -71,12 +72,11 @@ class Int4llamaAttention {
 
    private:
     std::string profile_name = "Int4llamaAttention";
-    int embed_dim, num_heads, num_kv_heads, head_dim;
+    int embed_dim, num_heads, num_kv_heads, head_dim, max_sqlen;
 #ifdef QM_CUDA
     Linear_half_int4 o_proj, qkv_proj;
     RotaryPosEmb_cuda rotary_pos_emb;
     BMM_F16T qk_bmm, pv_bmm;
-    int max_sqlen;
 #else
     Linear_FP_int4 k_proj, v_proj, q_proj, o_proj, qkv_proj;
     RotaryPosEmb rotary_pos_emb;

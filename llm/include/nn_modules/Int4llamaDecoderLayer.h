@@ -63,6 +63,8 @@ class Int4llamaDecoderLayer {
    public:
     Int4llamaDecoderLayer(std::string param_path, const struct model_config config, int layer_idx);
     Int4llamaDecoderLayer(){};
+    static void free_all_decoder_memory();
+    static void initialize_decoder_memory(const struct model_config config);
     struct Int4llamaDecoderLayer_output forward(std::string param_path, const struct Int4llamaDecoderLayer_input &input, int layer_idx);
 
     std::string profile_name = "Int4llamaDecoderLayer";

@@ -19,6 +19,118 @@ static float *down_scale_ptr, *down_offset_ptr, *down_zero_point_ptr;
 static float *up_scale_ptr, *up_offset_ptr, *up_zero_point_ptr;
 #endif
 
+void Int4llamaDecoderLayer::free_all_decoder_memory() {
+    if (hidden_states_float_arr) {
+        deallocate_memory(hidden_states_float_arr);
+        hidden_states_float_arr = nullptr;
+    }
+    if (final_layer_norm_arr) {
+        deallocate_memory(final_layer_norm_arr);
+        final_layer_norm_arr = nullptr;
+    }
+    if (gate_proj_arr) {
+        deallocate_memory(gate_proj_arr);
+        gate_proj_arr = nullptr;
+    }
+    if (up_proj_arr) {
+        deallocate_memory(up_proj_arr);
+        up_proj_arr = nullptr;
+    }
+    if (down_proj_arr) {
+        deallocate_memory(down_proj_arr);
+        down_proj_arr = nullptr;
+    }
+    if (hidden_states_arr) {
+        deallocate_memory(hidden_states_arr);
+        hidden_states_arr = nullptr;
+    }
+
+#if DEC_SHARED_MEM
+    if (gate_proj_weight) {
+        deallocate_memory(gate_proj_weight);
+        gate_proj_weight = nullptr;
+    }
+    if (gate_scale_ptr) {
+        deallocate_memory(gate_scale_ptr);
+        gate_scale_ptr = nullptr;
+    }
+    if (gate_offset_ptr) {
+        deallocate_memory(gate_offset_ptr);
+        gate_offset_ptr = nullptr;
+    }
+    if (gate_zero_point_ptr) {
+        deallocate_memory(gate_zero_point_ptr);
+        gate_zero_point_ptr = nullptr;
+    }
+    if (down_proj_weight) {
+        deallocate_memory(down_proj_weight);
+        down_proj_weight = nullptr;
+    }
+    if (down_scale_ptr) {
+        deallocate_memory(down_scale_ptr);
+        down_scale_ptr = nullptr;
+    }
+    if (down_offset_ptr) {
+        deallocate_memory(down_offset_ptr);
+        down_offset_ptr = nullptr;
+    }
+    if (down_zero_point_ptr) {
+        deallocate_memory(down_zero_point_ptr);
+        down_zero_point_ptr = nullptr;
+    }
+    if (up_proj_weight) {
+        deallocate_memory(up_proj_weight);
+        up_proj_weight = nullptr;
+    }
+    if (up_scale_ptr) {
+        deallocate_memory(up_scale_ptr);
+        up_scale_ptr = nullptr;
+    }
+    if (up_offset_ptr) {
+        deallocate_memory(up_offset_ptr);
+        up_offset_ptr = nullptr;
+    }
+    if (up_zero_point_ptr) {
+        deallocate_memory(up_zero_point_ptr);
+        up_zero_point_ptr = nullptr;
+    }
+#endif
+}
+
+void Int4llamaDecoderLayer::initialize_decoder_memory(const struct model_config config) {
+    // Free existing memory first to prevent leaks
+    free_all_decoder_memory();
+
+    // Allocate fresh buffers
+    allocate_aligned_memory(hidden_states_float_arr, config.max_sqlen * config.embed_dim * sizeof(float));
+    allocate_aligned_memory(final_layer_norm_arr, config.max_sqlen * config.embed_dim * sizeof(float));
+    allocate_aligned_memory(gate_proj_arr, config.max_sqlen * config.hidden_dim * sizeof(float));
+    allocate_aligned_memory(up_proj_arr, config.max_sqlen * config.hidden_dim * sizeof(float));
+    allocate_aligned_memory(down_proj_arr, config.max_sqlen * config.embed_dim * sizeof(float));
+    allocate_aligned_memory(hidden_states_arr, config.max_sqlen * config.embed_dim * sizeof(float));
+
+#if DEC_SHARED_MEM
+    // gate_proj
+    int gate_weight_length = config.embed_dim * config.hidden_dim * sizeof(uint8_t) / 2;
+    allocate_aligned_memory(gate_proj_weight, gate_weight_length);
+    allocate_aligned_memory(gate_scale_ptr, (gate_weight_length * 2 * sizeof(float)) / QK);
+    allocate_aligned_memory(gate_offset_ptr, (gate_weight_length * 2 * sizeof(float)) / QK);
+    allocate_aligned_memory(gate_zero_point_ptr, 1 * sizeof(float));
+    // down_proj
+    int down_weight_length = config.hidden_dim * config.embed_dim * sizeof(uint8_t) / 2;
+    allocate_aligned_memory(down_proj_weight, down_weight_length);
+    allocate_aligned_memory(down_scale_ptr, (down_weight_length * 2 * sizeof(float)) / QK);
+    allocate_aligned_memory(down_offset_ptr, (down_weight_length * 2 * sizeof(float)) / QK);
+    allocate_aligned_memory(down_zero_point_ptr, 1 * sizeof(float));
+    // up_proj
+    int up_weight_length = config.embed_dim * config.hidden_dim * sizeof(uint8_t) / 2;
+    allocate_aligned_memory(up_proj_weight, up_weight_length);
+    allocate_aligned_memory(up_scale_ptr, (up_weight_length * 2 * sizeof(float)) / QK);
+    allocate_aligned_memory(up_offset_ptr, (up_weight_length * 2 * sizeof(float)) / QK);
+    allocate_aligned_memory(up_zero_point_ptr, 1 * sizeof(float));
+#endif
+}
+
 template <typename T>
 static void add(Matrix3D<T> a, Matrix3D<T> b, Matrix3D<T> c) {
     PROFILE_START("Int4llamaDecoderLayer::add");
@@ -116,34 +228,8 @@ struct Int4llamaDecoderLayer_output Int4llamaDecoderLayer::forward(std::string p
 
 Int4llamaDecoderLayer::Int4llamaDecoderLayer(std::string param_path, const struct model_config config, int layer_idx) {
     if (layer_idx == 0) {
-        allocate_aligned_memory(hidden_states_float_arr, config.max_sqlen * config.embed_dim * sizeof(float));
-        allocate_aligned_memory(final_layer_norm_arr, config.max_sqlen * config.embed_dim * sizeof(float));
-        allocate_aligned_memory(gate_proj_arr, config.max_sqlen * config.hidden_dim * sizeof(float));
-        allocate_aligned_memory(up_proj_arr, config.max_sqlen * config.hidden_dim * sizeof(float));
-        allocate_aligned_memory(down_proj_arr, config.max_sqlen * config.embed_dim * sizeof(float));
-        allocate_aligned_memory(hidden_states_arr, config.max_sqlen * config.embed_dim * sizeof(float));
+        initialize_decoder_memory(config);
         Int4llamaAttention::initialized_memory(config);
-
-#if DEC_SHARED_MEM
-        // gate_proj
-        int gate_weight_length = config.embed_dim * config.hidden_dim * sizeof(uint8_t) / 2;
-        allocate_aligned_memory(gate_proj_weight, gate_weight_length);
-        allocate_aligned_memory(gate_scale_ptr, (gate_weight_length * 2 * sizeof(float)) / QK);
-        allocate_aligned_memory(gate_offset_ptr, (gate_weight_length * 2 * sizeof(float)) / QK);
-        allocate_aligned_memory(gate_zero_point_ptr, 1 * sizeof(float));
-        // down_proj
-        int down_weight_length = config.hidden_dim * config.embed_dim * sizeof(uint8_t) / 2;
-        allocate_aligned_memory(down_proj_weight, down_weight_length);
-        allocate_aligned_memory(down_scale_ptr, (down_weight_length * 2 * sizeof(float)) / QK);
-        allocate_aligned_memory(down_offset_ptr, (down_weight_length * 2 * sizeof(float)) / QK);
-        allocate_aligned_memory(down_zero_point_ptr, 1 * sizeof(float));
-        // up_proj
-        int up_weight_length = config.embed_dim * config.hidden_dim * sizeof(uint8_t) / 2;
-        allocate_aligned_memory(up_proj_weight, up_weight_length);
-        allocate_aligned_memory(up_scale_ptr, (up_weight_length * 2 * sizeof(float)) / QK);
-        allocate_aligned_memory(up_offset_ptr, (up_weight_length * 2 * sizeof(float)) / QK);
-        allocate_aligned_memory(up_zero_point_ptr, 1 * sizeof(float));
-#endif
     }
 
     float *input_layernorm_weight_ptr;
