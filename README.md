@@ -86,9 +86,13 @@ Here, we provide step-by-step instructions to deploy Llama-3-8B-Instruct with Ti
 
 - Download the repo.
   ```bash
-  git clone --recursive https://github.com/mit-han-lab/TinyChatEngine
+  git clone --recursive https://github.com/NicoJoerger/TinyChatEngineAPI.git
   cd TinyChatEngine
   ```
+  - If you already cloned without `--recursive`, initialize submodules:
+    ```bash
+    git submodule update --init --recursive
+    ```
 
 - Install Python Packages
   - The primary codebase of TinyChatEngine is written in pure C/C++. The Python packages are only used for downloading (and converting) models from our model zoo.
