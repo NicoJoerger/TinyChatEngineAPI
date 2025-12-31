@@ -22,7 +22,8 @@ void sayInBackground(const std::string& text) {
 }
 
 std::string LLaMAGenerate(std::string param_path, void *model_ptr, int model_type, std::string text, const struct opt_params generation_config,
-                          std::string voc_path, bool interactive, bool voicechat) {
+                          std::string voc_path, bool interactive, bool voicechat,
+                          token_callback_t callback, void* callback_data) {
     std::vector<int> last_n_tokens(generation_config.n_ctx);
     std::fill(last_n_tokens.begin(), last_n_tokens.end(), 0);
     std::vector<int> embd;
@@ -195,10 +196,21 @@ std::string LLaMAGenerate(std::string param_path, void *model_ptr, int model_typ
         input_ids = std::vector<int>{id};
         
 
-        if (interactive && !skip) {
-            output += llama_id_to_token(vocab, id);
-            std::cout << llama_id_to_token(vocab, id) << std::flush;
-            if (voicechat) {
+        if (!skip) {
+            const char* token_str = llama_id_to_token(vocab, id);
+            output += token_str;
+
+            // Priority 1: Use callback if provided
+            if (callback != nullptr) {
+                callback(token_str, id, generate_ids.size() - 1, callback_data);
+            }
+            // Priority 2: Fall back to interactive console output
+            else if (interactive) {
+                std::cout << token_str << std::flush;
+            }
+
+            // Voicechat only works in interactive mode
+            if (interactive && voicechat) {
                 // Remove quotes
                 output.erase(std::remove(output.begin(), output.end(), '\"'), output.end());
                 // Remove hashtags
@@ -230,7 +242,7 @@ std::string LLaMAGenerate(std::string param_path, void *model_ptr, int model_typ
                 else if (output.find("? ") != std::string::npos){
                     lastPos = output.rfind('?');
                     ended = true;
-    
+
                 }
                 else if (output.find(": ") != std::string::npos){
                     lastPos = output.rfind(':');
@@ -242,9 +254,9 @@ std::string LLaMAGenerate(std::string param_path, void *model_ptr, int model_typ
                     // Extract beginning of sentence 2 (excluding the space after the last period)
                     output = output.substr(lastPos + 1); // Skip the last period and space
                     std::thread sayThread(sayInBackground, output_copy);
-                    sayThread.detach(); 
-                } 
-            } 
+                    sayThread.detach();
+                }
+            }
         }
 
         new_prompt = false;

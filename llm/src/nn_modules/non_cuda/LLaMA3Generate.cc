@@ -54,7 +54,8 @@ void LLaMA3ResetConversationState() {
 }
 
 std::string LLaMA3Generate(std::string param_path, void *model_ptr, int model_type, std::string text, const struct opt_params generation_config,
-                          std::string voc_path, bool interactive, bool voicechat) {
+                          std::string voc_path, bool interactive, bool voicechat,
+                          token_callback_t callback, void* callback_data) {
     std::vector<int> last_n_tokens(generation_config.n_ctx);
     std::fill(last_n_tokens.begin(), last_n_tokens.end(), 0);
     std::vector<int> embd;
@@ -222,13 +223,21 @@ std::string LLaMA3Generate(std::string param_path, void *model_ptr, int model_ty
         generate_ids.push_back(id);
         input_ids = std::vector<int>{id};
 
-        if (interactive && !skip) {
-            // output += llama_id_to_token(vocab, id);
-            // std::cout << llama_id_to_token(vocab, id) << std::flush;
-            output += decode(&tokenizer, id);
-            std::cout << decode(&tokenizer, id) << std::flush;
+        if (!skip) {
+            // Decode token once
+            char* token_str = decode(&tokenizer, id);
+            output += token_str;
 
-            if (voicechat) {
+            // Priority 1: Use callback if provided
+            if (callback != nullptr) {
+                callback(token_str, id, generate_ids.size() - 1, callback_data);
+            }
+            // Priority 2: Fall back to interactive console output
+            else if (interactive) {
+                std::cout << token_str << std::flush;
+            }
+
+            if (interactive && voicechat) {
                 // Remove quotes
                 output.erase(std::remove(output.begin(), output.end(), '\"'), output.end());
                 // Remove hashtags

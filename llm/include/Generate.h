@@ -71,6 +71,14 @@ struct opt_params {
     float mirostat_eta = 0.10f;                 // learning rate
 };
 
+// Token streaming callback type
+// Parameters:
+//   - token_str: The decoded token string to output
+//   - token_id: The raw token ID
+//   - position: Current token position in generation sequence
+//   - user_data: Opaque pointer for callback context
+typedef void (*token_callback_t)(const char* token_str, int token_id, int position, void* user_data);
+
 void sample_repetition_penalty(OPT_token_data_array* candidates, const int* last_tokens, size_t last_tokens_size,
                                float penalty);
 
@@ -103,20 +111,25 @@ std::vector<int> OPTGenerate(void* model, int model_type, std::vector<int> input
 
 enum { OPT_INT8, LLaMA_FP32, LLaMA_INT4, OPT_FP32, OPT_INT4, StarCoder_FP32, StarCoder_INT4, LLaVA_FP32, LLaVA_INT4, VILA_FP32, VILA_INT4};
 std::string LLaMAGenerate(std::string param_path, void* model, int model_type, std::string text, const struct opt_params generation_config,
-                          std::string voc_path, bool interactive, bool voicechat);
+                          std::string voc_path, bool interactive, bool voicechat,
+                          token_callback_t callback = nullptr, void* callback_data = nullptr);
 
 std::string GPTBigCodeGenerate(std::string param_path, void *model_ptr, int model_type, std::string text, const struct opt_params generation_config,
-                          std::string voc_path, bool interactive);
+                          std::string voc_path, bool interactive,
+                          token_callback_t callback = nullptr, void* callback_data = nullptr);
 
-std::string LLaVAGenerate(std::string llama_param_path, void* llama_model_ptr, std::string clip_param_path, void* clip_model_ptr, int model_type, 
-                          std::string text, std::string img_path, const struct opt_params generation_config, std::string voc_path, bool interactive, 
-                          bool voicechat, bool is_vila);
+std::string LLaVAGenerate(std::string llama_param_path, void* llama_model_ptr, std::string clip_param_path, void* clip_model_ptr, int model_type,
+                          std::string text, std::string img_path, const struct opt_params generation_config, std::string voc_path, bool interactive,
+                          bool voicechat, bool is_vila,
+                          token_callback_t callback = nullptr, void* callback_data = nullptr);
 
 std::string MistralGenerate(std::string param_path, void* model, int model_type, std::string text, const struct opt_params generation_config,
-                          std::string voc_path, bool interactive, bool voicechat);
+                          std::string voc_path, bool interactive, bool voicechat,
+                          token_callback_t callback = nullptr, void* callback_data = nullptr);
 
 std::string LLaMA3Generate(std::string param_path, void* model, int model_type, std::string text, const struct opt_params generation_config,
-                          std::string voc_path, bool interactive, bool voicechat);
+                          std::string voc_path, bool interactive, bool voicechat,
+                          token_callback_t callback = nullptr, void* callback_data = nullptr);
 
 void MistralResetConversationState();
 void GPTBigCodeResetConversationState();

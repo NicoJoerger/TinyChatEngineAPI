@@ -32,7 +32,8 @@ void MistralResetConversationState() {
 }
 
 std::string MistralGenerate(std::string param_path, void *model_ptr, int model_type, std::string text, const struct opt_params generation_config,
-                          std::string voc_path, bool interactive, bool voicechat) {
+                          std::string voc_path, bool interactive, bool voicechat,
+                          token_callback_t callback, void* callback_data) {
     std::vector<int> last_n_tokens(generation_config.n_ctx);
     std::fill(last_n_tokens.begin(), last_n_tokens.end(), 0);
     std::vector<int> embd;
@@ -195,10 +196,21 @@ std::string MistralGenerate(std::string param_path, void *model_ptr, int model_t
         generate_ids.push_back(id);
         input_ids = std::vector<int>{id};
 
-        if (interactive && !skip) {
-            output += llama_id_to_token(vocab, id);
-            std::cout << llama_id_to_token(vocab, id) << std::flush;
-            if (voicechat) {
+        if (!skip) {
+            // Decode token once
+            const char* token_str = llama_id_to_token(vocab, id);
+            output += token_str;
+
+            // Priority 1: Use callback if provided
+            if (callback != nullptr) {
+                callback(token_str, id, generate_ids.size() - 1, callback_data);
+            }
+            // Priority 2: Fall back to interactive console output
+            else if (interactive) {
+                std::cout << token_str << std::flush;
+            }
+
+            if (interactive && voicechat) {
                 // Remove quotes
                 output.erase(std::remove(output.begin(), output.end(), '\"'), output.end());
                 // Remove hashtags

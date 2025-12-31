@@ -25,7 +25,8 @@ void GPTBigCodeResetConversationState() {
 }
 
 std::string GPTBigCodeGenerate(std::string param_path, void *model_ptr, int model_type, std::string text, const struct opt_params generation_config,
-                          std::string voc_path, bool interactive) {
+                          std::string voc_path, bool interactive,
+                          token_callback_t callback, void* callback_data) {
     std::vector<int> last_n_tokens(generation_config.n_ctx);
     std::fill(last_n_tokens.begin(), last_n_tokens.end(), 0);
     std::vector<int> embd;
@@ -183,9 +184,16 @@ std::string GPTBigCodeGenerate(std::string param_path, void *model_ptr, int mode
         generate_ids.push_back(id);
         input_ids = std::vector<int>{id};
 
-        if (interactive) {
-            output += starcoder_id_to_token(vocab, id);
-            std::cout << starcoder_id_to_token(vocab, id) << std::flush;
+        const char* token_str = starcoder_id_to_token(vocab, id);
+        output += token_str;
+
+        // Priority 1: Use callback if provided
+        if (callback != nullptr) {
+            callback(token_str, id, generate_ids.size() - 1, callback_data);
+        }
+        // Priority 2: Fall back to interactive console output
+        else if (interactive) {
+            std::cout << token_str << std::flush;
         }
 
         new_prompt = false;
