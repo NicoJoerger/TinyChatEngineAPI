@@ -31,7 +31,7 @@ class Int4GPTBigCodeDecoder {
     Matrix3D<float> get_position_embed(int sql_length, int past_length);
     struct Int4GPTBigCodeDecoder_output forward(const struct Int4GPTBigCodeDecoder_input& input);
     Embedding wte, wpe;
-    int voc_size, embed_dim, padding_idx, hidden_dim, num_heads, max_position_embeddings;
+    int voc_size, embed_dim, padding_idx, hidden_dim, num_heads, max_position_embeddings, max_sqlen;
     std::vector<Int4GPTBigCodeDecoderLayer> layers;
     LayerNorm ln_f;
     std::string profile_name = "Int4GPTBigCodeDecoder";

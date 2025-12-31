@@ -14,6 +14,28 @@ void speakInBackground(const std::string& text) {
     (void)result;
 }
 
+// Static variables for conversation state
+static bool has_past_kv = false;
+static std::vector<Matrix3D<int8_t>> past_keys_int8, past_values_int8;
+static std::vector<Matrix3D<float>> past_keys, past_values;
+
+void OPTResetConversationState() {
+    // Reset KV cache flag
+    has_past_kv = false;
+
+    // Clear accumulated KV cache vectors
+    // NOTE: This only clears the vector containers (Matrix3D wrappers)
+    // The actual memory is in static buffers managed by:
+    //   - Int4OPTDecoderLayer::initialize_decoder_memory(config)
+    //   - Int4OPTAttention::initialized_memory(config)
+    //   - Int4OPTAttention::reset_cache(config)
+    // These should be called after this function (see /new command handler pattern)
+    past_keys_int8.clear();
+    past_values_int8.clear();
+    past_keys.clear();
+    past_values.clear();
+}
+
 // OPTGenerate function
 std::vector<int> OPTGenerate(void *model_ptr, int model_type, std::vector<int> input_ids,
                              const struct opt_params generation_config, Encoder *encoder, bool interactive, bool voicechat) {
@@ -37,9 +59,6 @@ std::vector<int> OPTGenerate(void *model_ptr, int model_type, std::vector<int> i
     if (encoder == NULL) interactive = false;
     if (interactive) std::cout << "ASSISTANT: ";
 
-    bool has_past_kv = false;
-    std::vector<Matrix3D<int8_t>> past_keys_int8, past_values_int8;
-    std::vector<Matrix3D<float>> past_keys, past_values;
     int n_remain = generation_config.n_predict;
     std::string output;
     while (n_remain != 0) {
@@ -47,63 +66,71 @@ std::vector<int> OPTGenerate(void *model_ptr, int model_type, std::vector<int> i
         std::vector<float> logits(generation_config.n_vocab);
 
         int sqlen = 1;
-        if (model_type == OPT_INT8) {
-            struct OPTForCausalLM_output model_output;
-            OPTForCausalLM *model = static_cast<OPTForCausalLM *>(model_ptr);
-            if (has_past_kv) {
-                Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
-                struct OPTForCausalLM_input model_input = {input_ids_mat, past_keys_int8, past_values_int8};
-                model_output = model->forward(model_input);
-            } else {
-                sqlen = input_ids.size();
-                Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
-                struct OPTForCausalLM_input model_input = {input_ids_mat};
-                model_output = model->forward(model_input);
+
+        // Wrap model forward in try-catch to handle sequence length overflow
+        try {
+            if (model_type == OPT_INT8) {
+                struct OPTForCausalLM_output model_output;
+                OPTForCausalLM *model = static_cast<OPTForCausalLM *>(model_ptr);
+                if (has_past_kv) {
+                    Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
+                    struct OPTForCausalLM_input model_input = {input_ids_mat, past_keys_int8, past_values_int8};
+                    model_output = model->forward(model_input);
+                } else {
+                    sqlen = input_ids.size();
+                    Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
+                    struct OPTForCausalLM_input model_input = {input_ids_mat};
+                    model_output = model->forward(model_input);
+                }
+                past_keys_int8 = model_output.past_keys;
+                past_values_int8 = model_output.past_values;
+                has_past_kv = true;
+                // memcpy model_ouput.logits[-1] to logits
+                memcpy(logits.data(), &model_output.logits.m_data[(sqlen - 1) * generation_config.n_vocab],
+                       generation_config.n_vocab * sizeof(float));
+            } else if (model_type == OPT_FP32) {
+                struct Fp32OPTForCausalLM_output model_output;
+                Fp32OPTForCausalLM *model = static_cast<Fp32OPTForCausalLM *>(model_ptr);
+                if (has_past_kv) {
+                    Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
+                    struct Fp32OPTForCausalLM_input model_input = {input_ids_mat, past_keys, past_values};
+                    model_output = model->forward(model_input);
+                } else {
+                    sqlen = input_ids.size();
+                    Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
+                    struct Fp32OPTForCausalLM_input model_input = {input_ids_mat};
+                    model_output = model->forward(model_input);
+                }
+                past_keys = model_output.past_keys;
+                past_values = model_output.past_values;
+                has_past_kv = true;
+                // memcpy model_ouput.logits[-1] to logits
+                memcpy(logits.data(), &model_output.logits.m_data[(sqlen - 1) * generation_config.n_vocab],
+                       generation_config.n_vocab * sizeof(float));
+            } else if (model_type == OPT_INT4) {
+                struct Int4OPTForCausalLM_output model_output;
+                Int4OPTForCausalLM *model = static_cast<Int4OPTForCausalLM *>(model_ptr);
+                if (has_past_kv) {
+                    Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
+                    struct Int4OPTForCausalLM_input model_input = {input_ids_mat, past_keys, past_values};
+                    model_output = model->forward(model_input);
+                } else {
+                    sqlen = input_ids.size();
+                    Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
+                    struct Int4OPTForCausalLM_input model_input = {input_ids_mat};
+                    model_output = model->forward(model_input);
+                }
+                past_keys = model_output.past_keys;
+                past_values = model_output.past_values;
+                has_past_kv = true;
+                // memcpy model_ouput.logits[-1] to logits
+                memcpy(logits.data(), &model_output.logits.m_data[(sqlen - 1) * generation_config.n_vocab],
+                       generation_config.n_vocab * sizeof(float));
             }
-            past_keys_int8 = model_output.past_keys;
-            past_values_int8 = model_output.past_values;
-            has_past_kv = true;
-            // memcpy model_ouput.logits[-1] to logits
-            memcpy(logits.data(), &model_output.logits.m_data[(sqlen - 1) * generation_config.n_vocab],
-                   generation_config.n_vocab * sizeof(float));
-        } else if (model_type == OPT_FP32) {
-            struct Fp32OPTForCausalLM_output model_output;
-            Fp32OPTForCausalLM *model = static_cast<Fp32OPTForCausalLM *>(model_ptr);
-            if (has_past_kv) {
-                Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
-                struct Fp32OPTForCausalLM_input model_input = {input_ids_mat, past_keys, past_values};
-                model_output = model->forward(model_input);
-            } else {
-                sqlen = input_ids.size();
-                Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
-                struct Fp32OPTForCausalLM_input model_input = {input_ids_mat};
-                model_output = model->forward(model_input);
-            }
-            past_keys = model_output.past_keys;
-            past_values = model_output.past_values;
-            has_past_kv = true;
-            // memcpy model_ouput.logits[-1] to logits
-            memcpy(logits.data(), &model_output.logits.m_data[(sqlen - 1) * generation_config.n_vocab],
-                   generation_config.n_vocab * sizeof(float));
-        } else if (model_type == OPT_INT4) {
-            struct Int4OPTForCausalLM_output model_output;
-            Int4OPTForCausalLM *model = static_cast<Int4OPTForCausalLM *>(model_ptr);
-            if (has_past_kv) {
-                Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
-                struct Int4OPTForCausalLM_input model_input = {input_ids_mat, past_keys, past_values};
-                model_output = model->forward(model_input);
-            } else {
-                sqlen = input_ids.size();
-                Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
-                struct Int4OPTForCausalLM_input model_input = {input_ids_mat};
-                model_output = model->forward(model_input);
-            }
-            past_keys = model_output.past_keys;
-            past_values = model_output.past_values;
-            has_past_kv = true;
-            // memcpy model_ouput.logits[-1] to logits
-            memcpy(logits.data(), &model_output.logits.m_data[(sqlen - 1) * generation_config.n_vocab],
-                   generation_config.n_vocab * sizeof(float));
+        } catch (const std::runtime_error& e) {
+            // Sequence length exceeded - stop generation gracefully
+            std::cerr << "\n[Generation stopped due to sequence length limit]" << std::endl;
+            break;  // Exit generation loop
         }
         // Generate
         const int n_ctx = generation_config.n_ctx;

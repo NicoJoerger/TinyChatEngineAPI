@@ -8,6 +8,22 @@
 #include "utils.h"
 #include "interface.h"
 
+// Static variables for conversation state
+static bool has_past_kv = false;
+static std::vector<Matrix3D<float>> past_keys, past_values;
+
+void GPTBigCodeResetConversationState() {
+    // Reset KV cache flag
+    has_past_kv = false;
+
+    // Clear accumulated KV cache vectors
+    // NOTE: This only clears the vector containers (Matrix3D wrappers)
+    // The actual memory is in static buffers in Int4GPTBigCodeAttention
+    // which are freed/reallocated separately
+    past_keys.clear();
+    past_values.clear();
+}
+
 std::string GPTBigCodeGenerate(std::string param_path, void *model_ptr, int model_type, std::string text, const struct opt_params generation_config,
                           std::string voc_path, bool interactive) {
     std::vector<int> last_n_tokens(generation_config.n_ctx);
@@ -38,8 +54,6 @@ std::string GPTBigCodeGenerate(std::string param_path, void *model_ptr, int mode
     bool previous_two_hash = false;
     int break_cnt = 2;
     bool new_prompt = true;
-    static bool has_past_kv = false;
-    static std::vector<Matrix3D<float>> past_keys, past_values;
     int n_remain = generation_config.n_predict;
     std::string output;
     while (n_remain != 0 && break_cnt) {
@@ -49,48 +63,56 @@ std::string GPTBigCodeGenerate(std::string param_path, void *model_ptr, int mode
         if (new_prompt) {
             sqlen = input_ids.size();
         }
-        if (model_type == StarCoder_INT4) {
-            Int4GPTBigCodeForCausalLM *model = static_cast<Int4GPTBigCodeForCausalLM *>(model_ptr);
-            struct Int4GPTBigCodeForCausalLM_output model_output;
-            struct Int4GPTBigCodeForCausalLM_input model_input;
-            if (has_past_kv) {
-                Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
-                model_input = {input_ids_mat, past_keys, past_values};
-            } else {
-                Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
-                model_input = {input_ids_mat};
+
+        // Wrap model forward in try-catch to handle sequence length overflow
+        try {
+            if (model_type == StarCoder_INT4) {
+                Int4GPTBigCodeForCausalLM *model = static_cast<Int4GPTBigCodeForCausalLM *>(model_ptr);
+                struct Int4GPTBigCodeForCausalLM_output model_output;
+                struct Int4GPTBigCodeForCausalLM_input model_input;
+                if (has_past_kv) {
+                    Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
+                    model_input = {input_ids_mat, past_keys, past_values};
+                } else {
+                    Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
+                    model_input = {input_ids_mat};
+                }
+                if (!new_prompt) STATS_START("Inference latency");
+                // printf("Before model->forward\n");
+                model_output = model->forward(param_path, model_input);
+                // printf("After model->forward\n");
+                if (!new_prompt) STATS_END("Inference latency");
+                past_keys = model_output.past_keys;
+                past_values = model_output.past_values;
+                // memcpy model_ouput.logits[-1] to logits
+                // printf("Before memcpy\n");
+                memcpy(logits.data(), &model_output.logits.m_data[(sqlen - 1) * generation_config.n_vocab],
+                       generation_config.n_vocab * sizeof(float));
+                // printf("After memcpy\n");
+            } else if (model_type == StarCoder_FP32) {
+                Fp32GPTBigCodeForCausalLM *model = static_cast<Fp32GPTBigCodeForCausalLM *>(model_ptr);
+                struct Fp32GPTBigCodeForCausalLM_output model_output;
+                struct Fp32GPTBigCodeForCausalLM_input model_input;
+                if (has_past_kv) {
+                    Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
+                    model_input = {input_ids_mat, past_keys, past_values};
+                } else {
+                    Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
+                    model_input = {input_ids_mat};
+                }
+                if (!new_prompt) STATS_START("Inference latency");
+                model_output = model->forward(model_input);
+                if (!new_prompt) STATS_END("Inference latency");
+                past_keys = model_output.past_keys;
+                past_values = model_output.past_values;
+                // memcpy model_ouput.logits[-1] to logits
+                memcpy(logits.data(), &model_output.logits.m_data[(sqlen - 1) * generation_config.n_vocab],
+                       generation_config.n_vocab * sizeof(float));
             }
-            if (!new_prompt) STATS_START("Inference latency");
-            // printf("Before model->forward\n");
-            model_output = model->forward(param_path, model_input);
-            // printf("After model->forward\n");
-            if (!new_prompt) STATS_END("Inference latency");
-            past_keys = model_output.past_keys;
-            past_values = model_output.past_values;
-            // memcpy model_ouput.logits[-1] to logits
-            // printf("Before memcpy\n");
-            memcpy(logits.data(), &model_output.logits.m_data[(sqlen - 1) * generation_config.n_vocab],
-                   generation_config.n_vocab * sizeof(float));
-            // printf("After memcpy\n");
-        } else if (model_type == StarCoder_FP32) {
-            Fp32GPTBigCodeForCausalLM *model = static_cast<Fp32GPTBigCodeForCausalLM *>(model_ptr);
-            struct Fp32GPTBigCodeForCausalLM_output model_output;
-            struct Fp32GPTBigCodeForCausalLM_input model_input;
-            if (has_past_kv) {
-                Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
-                model_input = {input_ids_mat, past_keys, past_values};
-            } else {
-                Matrix3D<int> input_ids_mat(input_ids.data(), 1, 1, sqlen);
-                model_input = {input_ids_mat};
-            }
-            if (!new_prompt) STATS_START("Inference latency");
-            model_output = model->forward(model_input);
-            if (!new_prompt) STATS_END("Inference latency");
-            past_keys = model_output.past_keys;
-            past_values = model_output.past_values;
-            // memcpy model_ouput.logits[-1] to logits
-            memcpy(logits.data(), &model_output.logits.m_data[(sqlen - 1) * generation_config.n_vocab],
-                   generation_config.n_vocab * sizeof(float));
+        } catch (const std::runtime_error& e) {
+            // Sequence length exceeded - stop generation gracefully
+            std::cerr << "\n[Generation stopped due to sequence length limit]" << std::endl;
+            break;  // Exit generation loop
         }
         has_past_kv = true;
 

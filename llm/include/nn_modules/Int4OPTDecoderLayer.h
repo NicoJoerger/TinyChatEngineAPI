@@ -40,6 +40,8 @@ class Int4OPTDecoderLayer {
    public:
     Int4OPTDecoderLayer(std::string param_path, const struct model_config config, int layer_idx);
     struct Int4OPTDecoderLayer_output forward(const struct Int4OPTDecoderLayer_input &input);
+    static void free_all_decoder_memory();
+    static void initialize_decoder_memory(const struct model_config config);
 
     int embed_dim, num_attention_heads, hidden_dim, layer_idx;
     LayerNorm self_attn_layer_norm, final_layer_norm;  // from torch_int.nn

@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include <cmath>
+#include <stdexcept>
 
 #include "operators.h"
 #include "utils.h"
@@ -24,7 +25,100 @@ static float *value_states_arr;
 static float *query_states_arr;
 static float *value_states_transpose_arr;
 
+static void free_all_attention_memory(const struct model_config config) {
+    if (attn_weights_arr) {
+        deallocate_memory(attn_weights_arr);
+        attn_weights_arr = nullptr;
+    }
+    if (attn_probs_arr) {
+        deallocate_memory(attn_probs_arr);
+        attn_probs_arr = nullptr;
+    }
+    if (attn_output_fp_arr) {
+        deallocate_memory(attn_output_fp_arr);
+        attn_output_fp_arr = nullptr;
+    }
+    if (attn_output_arr) {
+        deallocate_memory(attn_output_arr);
+        attn_output_arr = nullptr;
+    }
+    if (attn_output_transpose_arr) {
+        deallocate_memory(attn_output_transpose_arr);
+        attn_output_transpose_arr = nullptr;
+    }
+    if (key_states_unshape_arr) {
+        deallocate_memory(key_states_unshape_arr);
+        key_states_unshape_arr = nullptr;
+    }
+    if (key_states_arr) {
+        deallocate_memory(key_states_arr);
+        key_states_arr = nullptr;
+    }
+    if (value_states_unshape_arr) {
+        deallocate_memory(value_states_unshape_arr);
+        value_states_unshape_arr = nullptr;
+    }
+    if (value_states_arr) {
+        deallocate_memory(value_states_arr);
+        value_states_arr = nullptr;
+    }
+    if (query_states_arr) {
+        deallocate_memory(query_states_arr);
+        query_states_arr = nullptr;
+    }
+    if (value_states_transpose_arr) {
+        deallocate_memory(value_states_transpose_arr);
+        value_states_transpose_arr = nullptr;
+    }
+    if (query_states_unshape_arr) {
+        deallocate_memory(query_states_unshape_arr);
+        query_states_unshape_arr = nullptr;
+    }
+
+    // Free cache buffers
+    if (key_states_arr_cache) {
+        for (int i = 0; i < config.num_layers; ++i) {
+            if (key_states_arr_cache[i]) {
+                for (int j = 0; j < 2; ++j) {
+                    if (key_states_arr_cache[i][j]) {
+                        deallocate_memory(key_states_arr_cache[i][j]);
+                        key_states_arr_cache[i][j] = nullptr;
+                    }
+                }
+                delete[] key_states_arr_cache[i];
+                key_states_arr_cache[i] = nullptr;
+            }
+        }
+        delete[] key_states_arr_cache;
+        key_states_arr_cache = nullptr;
+    }
+
+    if (value_states_arr_cache) {
+        for (int i = 0; i < config.num_layers; ++i) {
+            if (value_states_arr_cache[i]) {
+                for (int j = 0; j < 2; ++j) {
+                    if (value_states_arr_cache[i][j]) {
+                        deallocate_memory(value_states_arr_cache[i][j]);
+                        value_states_arr_cache[i][j] = nullptr;
+                    }
+                }
+                delete[] value_states_arr_cache[i];
+                value_states_arr_cache[i] = nullptr;
+            }
+        }
+        delete[] value_states_arr_cache;
+        value_states_arr_cache = nullptr;
+    }
+
+    if (cache_num) {
+        delete[] cache_num;
+        cache_num = nullptr;
+    }
+}
+
 void Int4OPTAttention::initialized_memory(const struct model_config config) {
+    // CRITICAL: Free all existing memory before reallocating to prevent leaks
+    free_all_attention_memory(config);
     allocate_aligned_memory(attn_weights_arr, config.num_heads * config.max_sqlen * config.max_sqlen * sizeof(float));
     allocate_aligned_memory(attn_probs_arr, config.num_heads * config.max_sqlen * config.max_sqlen * sizeof(float));
     // allocate_aligned_memory(attn_probs_int8_arr,
@@ -53,6 +147,15 @@ void Int4OPTAttention::initialized_memory(const struct model_config config) {
         value_states_arr_cache[i] = new float *[2];
         for (int j = 0; j < 2; ++j) {
             allocate_aligned_memory(value_states_arr_cache[i][j], config.max_sqlen * config.embed_dim * sizeof(float));
+        }
+    }
+}
+
+void Int4OPTAttention::reset_cache(const struct model_config config) {
+    // Reset cache buffer indices to 0 for all layers
+    if (cache_num) {
+        for (int i = 0; i < config.num_layers; i++) {
+            cache_num[i] = 0;
         }
     }
 }
@@ -92,6 +195,7 @@ Int4OPTAttention::Int4OPTAttention(std::string param_path, const struct model_co
     this->num_heads = config.num_heads;
     assert(config.embed_dim % config.num_heads == 0);
     this->head_dim = config.embed_dim / config.num_heads;
+    this->max_sqlen = config.max_sqlen;
 }
 
 inline void Int4OPTAttention::shpae(Matrix3D<float> unshape, Matrix3D<float> shaped, int sqlen) {
@@ -195,6 +299,18 @@ struct Int4OPTAttention_output Int4OPTAttention::forward(const struct Int4OPTAtt
     if (input.has_past_key_value) {
         assert(input.past_key.m_dim_z == this->head_dim);
         tgz += input.past_key.m_dim_y;
+    }
+
+    // CRITICAL: Check for sequence length overflow
+    if (tgz > this->max_sqlen) {
+        std::cerr << "\n[CRITICAL] Attention layer detected sequence overflow: "
+                  << tgz << " > " << this->max_sqlen << std::endl;
+        PROFILE_END(profile_name + "::cat_past_keys_values");
+        PROFILE_END(profile_name);
+        throw std::runtime_error("Attention buffer overflow prevented - use /new command to reset");
+    }
+
+    if (input.has_past_key_value) {
         float *val_ptr = ret_value_states, *key_ptr = ret_key_states;
         int past_block = input.past_key.m_dim_y * input.past_key.m_dim_z;
         int sq_block = sqlen * this->head_dim;

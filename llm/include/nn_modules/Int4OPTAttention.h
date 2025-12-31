@@ -33,13 +33,14 @@ class Int4OPTAttention {
     Int4OPTAttention(std::string param_path, const struct model_config config);
     Int4OPTAttention() {}
     static void initialized_memory(const struct model_config config);
+    static void reset_cache(const struct model_config config);
     struct Int4OPTAttention_output forward(const struct Int4OPTAttention_input &input);
 
    private:
     void unshape(Matrix3D<float> shaped, Matrix3D<float> unshape, int sqlen);
     void shpae(Matrix3D<float> unshape, Matrix3D<float> shaped, int sqlen);
     float scaling;
-    int embed_dim, num_heads, head_dim;
+    int embed_dim, num_heads, head_dim, max_sqlen;
     BMM_F32T qk_bmm, pv_bmm;
     Linear_FP_int4 k_proj, v_proj, q_proj, out_proj;
     std::string profile_name = "Int4OPTAttention";

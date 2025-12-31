@@ -21,6 +21,41 @@ void add(Matrix3D<T> a, Matrix3D<T> b, Matrix3D<T> c) {
     PROFILE_END("Int4OPTDecoderLayer::add");
 }
 
+void Int4OPTDecoderLayer::free_all_decoder_memory() {
+    if (hidden_states_float_arr) {
+        deallocate_memory(hidden_states_float_arr);
+        hidden_states_float_arr = nullptr;
+    }
+    if (final_layer_norm_arr) {
+        deallocate_memory(final_layer_norm_arr);
+        final_layer_norm_arr = nullptr;
+    }
+    if (fc_1_arr) {
+        deallocate_memory(fc_1_arr);
+        fc_1_arr = nullptr;
+    }
+    if (fc_2_arr) {
+        deallocate_memory(fc_2_arr);
+        fc_2_arr = nullptr;
+    }
+    if (hidden_states_arr) {
+        deallocate_memory(hidden_states_arr);
+        hidden_states_arr = nullptr;
+    }
+}
+
+void Int4OPTDecoderLayer::initialize_decoder_memory(const struct model_config config) {
+    // CRITICAL: Free all existing memory before reallocating to prevent leaks
+    free_all_decoder_memory();
+
+    // Allocate fresh buffers
+    allocate_aligned_memory(hidden_states_float_arr, config.max_sqlen * config.embed_dim * sizeof(float));
+    allocate_aligned_memory(final_layer_norm_arr, config.max_sqlen * config.embed_dim * sizeof(float));
+    allocate_aligned_memory(fc_1_arr, config.max_sqlen * config.hidden_dim * sizeof(float));
+    allocate_aligned_memory(fc_2_arr, config.max_sqlen * config.embed_dim * sizeof(float));
+    allocate_aligned_memory(hidden_states_arr, config.max_sqlen * config.embed_dim * sizeof(float));
+}
+
 struct Int4OPTDecoderLayer_output Int4OPTDecoderLayer::forward(const struct Int4OPTDecoderLayer_input &input) {
     PROFILE_START(profile_name);
     // Layernorm
@@ -66,11 +101,7 @@ struct Int4OPTDecoderLayer_output Int4OPTDecoderLayer::forward(const struct Int4
 
 Int4OPTDecoderLayer::Int4OPTDecoderLayer(std::string param_path, const model_config config, int layer_idx) {
     if (layer_idx == 0) {
-        allocate_aligned_memory(hidden_states_float_arr, config.max_sqlen * config.embed_dim * sizeof(float));
-        allocate_aligned_memory(final_layer_norm_arr, config.max_sqlen * config.embed_dim * sizeof(float));
-        allocate_aligned_memory(fc_1_arr, config.max_sqlen * config.hidden_dim * sizeof(float));
-        allocate_aligned_memory(fc_2_arr, config.max_sqlen * config.embed_dim * sizeof(float));
-        allocate_aligned_memory(hidden_states_arr, config.max_sqlen * config.embed_dim * sizeof(float));
+        initialize_decoder_memory(config);
         Int4OPTAttention::initialized_memory(config);
     }
 

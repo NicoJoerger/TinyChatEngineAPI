@@ -532,6 +532,18 @@ int main(int argc, char* argv[]) {
                 // reset color
                 set_print_reset();
 
+                // Check for /new command
+                if (input == "/new") {
+                    // Reset conversation state
+                    GPTBigCodeResetConversationState();
+
+                    // Show confirmation message
+                    set_print_yellow();
+                    std::cout << "\n[Conversation reset - starting fresh]\n\n";
+                    set_print_reset();
+                    continue;
+                }
+
                 GPTBigCodeGenerate(m_path, &model, StarCoder_FP32, input, generation_config, "models/starcoder_vocab.bin", true);
             }
         } else if (format_id == INT4) {
@@ -551,6 +563,18 @@ int main(int argc, char* argv[]) {
                 std::cout << input;
                 // reset color
                 set_print_reset();
+
+                // Check for /new command
+                if (input == "/new") {
+                    // Reset conversation state
+                    GPTBigCodeResetConversationState();
+
+                    // Show confirmation message
+                    set_print_yellow();
+                    std::cout << "\n[Conversation reset - starting fresh]\n\n";
+                    set_print_reset();
+                    continue;
+                }
 
                 GPTBigCodeGenerate(m_path, &model, StarCoder_INT4, input, generation_config, "models/starcoder_vocab.bin", true);    
             }
@@ -1003,6 +1027,32 @@ int main(int argc, char* argv[]) {
                 if (input == "quit" || input == "Quit" || input == "Quit." || input == "quit.")
                     break;
 
+                // Check for /new command
+                if (input == "/new") {
+                    // 1. Clear conversation state vectors
+                    MistralResetConversationState();
+
+                    // 2. Get model config for reinitialization
+                    struct model_config config = get_opt_model_config(model_id);
+
+                    // 3. Free and reinitialize all static memory buffers
+                    // This prevents memory leaks by deallocating before reallocating
+                    Int4llamaDecoderLayer::initialize_decoder_memory(config);
+                    Int4llamaAttention::initialized_memory(config);
+
+                    // 4. Reset cache buffer indices
+                    Int4llamaAttention::reset_cache(config);
+
+                    // 5. Reset local state
+                    first_prompt = true;
+
+                    // Show confirmation message
+                    set_print_yellow();
+                    std::cout << "\n[Conversation reset - starting fresh]\n\n";
+                    set_print_reset();
+                    continue;
+                }
+
                 std::cout << "ASSISTANT: ";
                 input = build_mistral_prompt(input, first_prompt, instruct);
                 if (first_prompt) {
@@ -1044,6 +1094,32 @@ int main(int argc, char* argv[]) {
                 }
                 if (input == "quit" || input == "Quit" || input == "Quit." || input == "quit.")
                     break;
+
+                // Check for /new command
+                if (input == "/new") {
+                    // 1. Clear conversation state vectors
+                    MistralResetConversationState();
+
+                    // 2. Get model config for reinitialization
+                    struct model_config config = get_opt_model_config(model_id);
+
+                    // 3. Free and reinitialize all static memory buffers
+                    // This prevents memory leaks by deallocating before reallocating
+                    Int4llamaDecoderLayer::initialize_decoder_memory(config);
+                    Int4llamaAttention::initialized_memory(config);
+
+                    // 4. Reset cache buffer indices
+                    Int4llamaAttention::reset_cache(config);
+
+                    // 5. Reset local state
+                    first_prompt = true;
+
+                    // Show confirmation message
+                    set_print_yellow();
+                    std::cout << "\n[Conversation reset - starting fresh]\n\n";
+                    set_print_reset();
+                    continue;
+                }
 
                 std::cout << "ASSISTANT: ";
                 input = build_mistral_prompt(input, first_prompt, instruct);

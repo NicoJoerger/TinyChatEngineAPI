@@ -31,7 +31,7 @@ class Int4OPTDecoder {
     Matrix3D<float> get_position_embed(int sql_length, int past_length);
     struct Int4OPTDecoder_output forward(const struct Int4OPTDecoder_input& input);
     Embedding embed_tokens, embed_positions;
-    int voc_size, embed_dim, padding_idx, hidden_dim, num_heads;
+    int voc_size, embed_dim, padding_idx, hidden_dim, num_heads, max_sqlen;
     std::vector<Int4OPTDecoderLayer> layers;
     LayerNorm final_layer_norm;
     std::string profile_name = "Int4OPTDecoder";

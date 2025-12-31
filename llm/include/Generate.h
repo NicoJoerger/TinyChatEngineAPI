@@ -118,6 +118,9 @@ std::string MistralGenerate(std::string param_path, void* model, int model_type,
 std::string LLaMA3Generate(std::string param_path, void* model, int model_type, std::string text, const struct opt_params generation_config,
                           std::string voc_path, bool interactive, bool voicechat);
 
+void MistralResetConversationState();
+void GPTBigCodeResetConversationState();
+void OPTResetConversationState();
 void LLaMA3ResetConversationState();
 
 #endif  // GENERATE_H

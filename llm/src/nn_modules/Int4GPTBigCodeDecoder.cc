@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <iostream>
+#include <stdexcept>
 
 #include "utils.h"
 
@@ -50,6 +51,7 @@ Int4GPTBigCodeDecoder::Int4GPTBigCodeDecoder(std::string param_path, const struc
     this->num_heads = config.num_heads;
     this->padding_idx = config.padding_idx;
     this->max_position_embeddings = 2048; // To be fixed
+    this->max_sqlen = config.max_sqlen;
 
     // Embedding
     Matrix3D<float> embweight(new float[voc_size * embed_dim], 1, voc_size, embed_dim);
@@ -99,6 +101,21 @@ struct Int4GPTBigCodeDecoder_output Int4GPTBigCodeDecoder::forward(const struct 
 
     if (input.has_past_keys_values) {
         past_key_values_length = input.past_keys[0].m_dim_y;
+    }
+
+    // CRITICAL: Check for buffer overflow before proceeding
+    int total_seq_len = sqlen + past_key_values_length;
+    if (total_seq_len > this->max_sqlen) {
+        std::cerr << "\n" << std::string(80, '=') << std::endl;
+        std::cerr << "ERROR: SEQUENCE LENGTH LIMIT EXCEEDED!" << std::endl;
+        std::cerr << std::string(80, '=') << std::endl;
+        std::cerr << "\nCurrent sequence length: " << total_seq_len << " tokens" << std::endl;
+        std::cerr << "Maximum allowed length:  " << this->max_sqlen << " tokens" << std::endl;
+        std::cerr << "\nThe conversation has become too long and exceeds the model's" << std::endl;
+        std::cerr << "context window. Continuing would cause memory corruption." << std::endl;
+        std::cerr << "\nSOLUTION: Type '/new' to reset the conversation and start fresh." << std::endl;
+        std::cerr << "\n" << std::string(80, '=') << std::endl << std::endl;
+        throw std::runtime_error("Sequence length exceeds maximum buffer size - use /new command to reset");
     }
 
     // Attention mask  // To be checked
