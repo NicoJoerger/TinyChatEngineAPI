@@ -2,16 +2,18 @@
 
 #include <string.h>
 
+#include <array>
 #include <cmath>
+#include <vector>
 
 #include "operators.h"
 #include "utils.h"
 
 static float *attn_weights_arr;
-static float ***key_states_arr_cache;
-static float ***value_states_arr_cache;
+static std::vector<std::array<float*, 2>> key_states_arr_cache;
+static std::vector<std::array<float*, 2>> value_states_arr_cache;
 static float *attn_output_fp_arr;
-static int *cache_num;
+static std::vector<int> cache_num;
 static float *attn_output_arr;
 static float *attn_output_transpose_arr;
 static float *key_states_arr;
@@ -25,6 +27,28 @@ static float *value_states_unshape_arr;
 static float *final_key_states_arr;
 static float *final_value_states_arr;
 
+static void free_cache_buffers() {
+    for (size_t i = 0; i < key_states_arr_cache.size(); ++i) {
+        for (int j = 0; j < 2; ++j) {
+            if (key_states_arr_cache[i][j]) {
+                deallocate_memory(key_states_arr_cache[i][j]);
+                key_states_arr_cache[i][j] = nullptr;
+            }
+        }
+    }
+    for (size_t i = 0; i < value_states_arr_cache.size(); ++i) {
+        for (int j = 0; j < 2; ++j) {
+            if (value_states_arr_cache[i][j]) {
+                deallocate_memory(value_states_arr_cache[i][j]);
+                value_states_arr_cache[i][j] = nullptr;
+            }
+        }
+    }
+    key_states_arr_cache.clear();
+    value_states_arr_cache.clear();
+    cache_num.clear();
+}
+
 #if DEC_SHARED_MEM
 static uint8_t *q_weight, *k_weight, *v_weight, *o_weight;
 static float *q_scale_ptr, *q_offset_ptr, *q_zero_point_ptr;
@@ -34,6 +58,10 @@ static float *o_scale_ptr, *o_offset_ptr, *o_zero_point_ptr;
 #endif
 
 void Int4llamaAttention::initialized_memory(const struct model_config config) {
+    if (!key_states_arr_cache.empty() || !value_states_arr_cache.empty()) {
+        free_cache_buffers();
+    }
+
     allocate_aligned_memory(attn_weights_arr, config.num_heads * config.max_sqlen * config.max_sqlen * sizeof(float));
     allocate_aligned_memory(attn_output_fp_arr, config.max_sqlen * config.embed_dim * sizeof(float));
     allocate_aligned_memory(attn_output_arr, config.max_sqlen * config.embed_dim * sizeof(float));
@@ -42,18 +70,15 @@ void Int4llamaAttention::initialized_memory(const struct model_config config) {
     allocate_aligned_memory(value_states_arr, config.max_sqlen * config.embed_dim * sizeof(float));
     allocate_aligned_memory(query_states_arr, config.max_sqlen * config.embed_dim * sizeof(float));
     allocate_aligned_memory(value_states_transpose_arr, config.max_sqlen * config.embed_dim * sizeof(float));
-    cache_num = new int[config.num_layers];
-    for (int i = 0; i < config.num_layers; i++) cache_num[i] = 0;
-    key_states_arr_cache = new float **[config.num_layers];
+    cache_num.assign(config.num_layers, 0);
+    key_states_arr_cache.assign(config.num_layers, {nullptr, nullptr});
     for (int i = 0; i < config.num_layers; ++i) {
-        key_states_arr_cache[i] = new float *[2];
         for (int j = 0; j < 2; ++j) {
             allocate_aligned_memory(key_states_arr_cache[i][j], config.max_sqlen * config.embed_dim * sizeof(float));
         }
     }
-    value_states_arr_cache = new float **[config.num_layers];
+    value_states_arr_cache.assign(config.num_layers, {nullptr, nullptr});
     for (int i = 0; i < config.num_layers; ++i) {
-        value_states_arr_cache[i] = new float *[2];
         for (int j = 0; j < 2; ++j) {
             allocate_aligned_memory(value_states_arr_cache[i][j], config.max_sqlen * config.embed_dim * sizeof(float));
         }
