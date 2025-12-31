@@ -313,7 +313,7 @@ void free_tokenizer(Tokenizer* t) {
     for (int i = 0; i < t->vocab_size; i++) { free(t->vocab[i]); }
     free(t->vocab);
     free(t->vocab_scores);
-    free(t->sorted_vocab);
+    delete[] t->sorted_vocab;
 }
 
 char* decode(Tokenizer* t, int token) {
@@ -351,10 +351,10 @@ void encode(Tokenizer* t, const char *text, int8_t bos, int8_t eos, int *tokens,
         qsort(t->sorted_vocab, t->vocab_size, sizeof(TokenIndex), compare_tokens);
     }
 
-    // create a temporary buffer that will store merge candidates of always two consecutive tokens
-    // *2 for concat, +1 for null terminator +2 for UTF8 (in case max_token_length is 1)
-    // char* str_buffer = malloc((t->max_token_length*2 +1 +2) * sizeof(char));
-    char* str_buffer = new char[(t->max_token_length*2 +1 +2)];
+    // create a temporary buffer that will store merge candidates of two or three consecutive tokens
+    // *3 for concat, +1 for null terminator +2 for UTF8 (in case max_token_length is 1)
+    const size_t str_buffer_size = (t->max_token_length * 3) + 1 + 2;
+    char* str_buffer = new char[str_buffer_size];
     size_t str_len = 0;
 
     // start at 0 tokens
@@ -431,7 +431,7 @@ void encode(Tokenizer* t, const char *text, int8_t bos, int8_t eos, int *tokens,
         // first, try to find the best pair to merge
         for (int i = 0; i < (*n_tokens - 1); i++) {
             // check if we can merge the pair (tokens[i], tokens[i+1])
-            snprintf(str_buffer, t->max_token_length*2 +1 +2 +1, "%s%s", t->vocab[tokens[i]], t->vocab[tokens[i+1]]);
+            snprintf(str_buffer, str_buffer_size, "%s%s", t->vocab[tokens[i]], t->vocab[tokens[i+1]]);
             int id = str_lookup(str_buffer, t->sorted_vocab, t->vocab_size);
             if (id != -1 && t->vocab_scores[id] > best_score) {
                 // this merge pair exists in vocab! record its score and position
@@ -445,7 +445,7 @@ void encode(Tokenizer* t, const char *text, int8_t bos, int8_t eos, int *tokens,
         if (best_idx == -1) {
             for (int i = 0; i < (*n_tokens - 2); i++) {
                 // check if we can merge the triple (tokens[i], tokens[i+1], tokens[i+2])
-                snprintf(str_buffer, t->max_token_length*2 +1 +2 +1, "%s%s%s", t->vocab[tokens[i]], t->vocab[tokens[i+1]], t->vocab[tokens[i+2]]);
+                snprintf(str_buffer, str_buffer_size, "%s%s%s", t->vocab[tokens[i]], t->vocab[tokens[i+1]], t->vocab[tokens[i+2]]);
                 int id = str_lookup(str_buffer, t->sorted_vocab, t->vocab_size);
                 if (id != -1 && t->vocab_scores[id] > best_score) {
                     // this merge triple exists in vocab! record its score and position
@@ -473,5 +473,5 @@ void encode(Tokenizer* t, const char *text, int8_t bos, int8_t eos, int *tokens,
     // add optional EOS (=128001) token, if desired
     if (eos) tokens[(*n_tokens)++] = 128001;
 
-    free(str_buffer);
+    delete[] str_buffer;
 }
