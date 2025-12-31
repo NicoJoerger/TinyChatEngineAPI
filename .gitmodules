@@ -4,3 +4,6 @@
 [submodule "transformer/json"]
 	path = llm/json
 	url = https://github.com/nlohmann/json
+[submodule "llm/cpp-httplib"]
+	path = llm/cpp-httplib
+	url = https://github.com/yhirose/cpp-httplib.git
